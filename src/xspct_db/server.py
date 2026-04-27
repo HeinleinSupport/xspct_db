@@ -98,35 +98,45 @@ def run(config_path: str) -> None:
         format=config["xspct_db_log_prefix"] + " %(levelname)s %(funcName)s %(message)s",
     )
 
-    logger.info(
-        "listen address: %s  port: %s  TLS: %s",
-        config["xspct_db_listen_address"],
-        config["xspct_db_listen_port"],
-        config["xspct_db_tls"]["tls_enabled"],
-    )
-
     if uvloop is not None:
         asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
         logger.info("uvloop event loop policy active")
 
-    app = create_app(config)
+    async def _run() -> None:
+        app = create_app(config)
+        runner = web.AppRunner(app, backlog=int(config["xspct_db_listen_backlog"]))
+        await runner.setup()
 
-    ssl_ctx: ssl.SSLContext | None = None
-    if config["xspct_db_tls"]["tls_enabled"]:
-        ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-        ssl_ctx.load_cert_chain(
-            config["xspct_db_tls"]["tls_cert"],
-            config["xspct_db_tls"]["tls_key"],
-        )
+        ssl_ctx: ssl.SSLContext | None = None
+        if config["xspct_db_tls"]["tls_enabled"]:
+            ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            ssl_ctx.load_cert_chain(
+                config["xspct_db_tls"]["tls_cert"],
+                config["xspct_db_tls"]["tls_key"],
+            )
+            logger.info("TLS enabled")
+
+        addrs = config["xspct_db_listen_address"]
+        if isinstance(addrs, str):
+            addrs = [addrs]
+        port = int(config["xspct_db_listen_port"])
+        for addr in addrs:
+            site = web.TCPSite(runner, addr, port, ssl_context=ssl_ctx)
+            await site.start()
+            logger.info("Listening on %s:%d  TLS: %s", addr, port, ssl_ctx is not None)
+
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            pass
+        finally:
+            await runner.cleanup()
 
     try:
-        web.run_app(
-            app,
-            host=config["xspct_db_listen_address"],
-            port=config["xspct_db_listen_port"],
-            backlog=int(config["xspct_db_listen_backlog"]),
-            ssl_context=ssl_ctx,
-        )
-    except (OSError, Exception) as exc:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        pass
+    except Exception as exc:
         logger.exception("Fatal error: %s", exc)
         sys.exit(1)
