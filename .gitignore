@@ -42,3 +42,6 @@ docs/_build/
 # Config with secrets (never commit real configs)
 config.yml
 *.local.yml
+
+# old src
+old_src/
