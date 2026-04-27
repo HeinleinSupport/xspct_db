@@ -36,6 +36,9 @@ htmlcov/
 *.swp
 *~
 
+# Sphinx build output
+docs/_build/
+
 # Config with secrets (never commit real configs)
 config.yml
 *.local.yml
