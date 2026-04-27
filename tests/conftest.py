@@ -1,0 +1,120 @@
+# SPDX-License-Identifier: EUPL-1.2
+# SPDX-FileCopyrightText: 2026 Carsten Rosenberg <c.rosenberg@heinlein-support.de>
+
+"""Shared pytest fixtures for the xspct_db test suite."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+from aiohttp.test_utils import TestClient, TestServer
+
+from xspct_db import stats
+from xspct_db.server import create_app
+
+
+# ---------------------------------------------------------------------------
+# Minimal configurations
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def base_cfg() -> dict[str, Any]:
+    """Return a minimal configuration dict with a dummy query backend."""
+    return {
+        "xspct_db_listen_address": ["127.0.0.1"],
+        "xspct_db_listen_port": "11350",
+        "xspct_db_listen_backlog": 128,
+        "xspct_db_log_level": 50,
+        "xspct_db_log_prefix": "Xspct_DB_Test",
+        "xspct_db_api_header": "X-Api-Key",
+        "xspct_db_api_key": ["test-key"],
+        "xspct_db_api_key_verify_fail": True,
+        "xspct_db_rspamd_header": "X-Rspamd-ID",
+        "xspct_db_request_timeout": 0,
+        "xspct_db_request_timeout_header": "",
+        "xspct_db_stats_enabled": False,
+        "xspct_db_stats_interval": 60,
+        "xspct_db_stats_sample_interval": 10,
+        "xspct_db_metrics_auth": {
+            "enabled": False,
+            "api_key": True,
+            "basic_auth_users": {},
+        },
+        "xspct_db_tls": {
+            "tls_enabled": False,
+            "tls_cert": "",
+            "tls_key": "",
+        },
+        "xspct_db_key_translation": {},
+        "xspct_db_value_split": {},
+        "xspct_db_queries": {
+            "test_dummy": {"db_type": "dummy"},
+        },
+        "xspct_db_ldap_pool_minconn": 2,
+        "xspct_db_ldap_pool_maxconn": 20,
+        "xspct_db_mysql_pool_minconn": 1,
+        "xspct_db_mysql_pool_maxconn": 20,
+        "xspct_db_redis_cache": {
+            "enabled": False,
+            "host": "localhost",
+            "port": 6379,
+            "user": "",
+            "password": "",
+            "decode_responses": True,
+            "prefix_user": "xspct_db_user_",
+            "prefix_alias": "xspct_db_alias_",
+            "prefix_negative_alias": "xspct_db_neg_alias_",
+            "expire": 60,
+            "expire_negative": 60,
+            "connect_timeout": 1,
+            "query_timeout": 1,
+            "max_connections": 40,
+            "max_errors": 2,
+        },
+        "xspct_db_yaml_data": {},
+    }
+
+
+@pytest.fixture
+def yaml_cfg(base_cfg: dict[str, Any]) -> dict[str, Any]:
+    """Config with a minimal YAML backend and some static data."""
+    cfg = dict(base_cfg)
+    cfg["xspct_db_queries"] = {
+        "users": {
+            "db_type": "yaml",
+            "primary_key": "mail",
+            "attr_list": ["*"],
+            "search_filter": ["mail", "aliases"],
+        }
+    }
+    cfg["xspct_db_yaml_data"] = {
+        "users": {
+            "alice@example.com": {
+                "mail": "alice@example.com",
+                "uid": "alice",
+                "aliases": ["a@example.com"],
+            },
+        }
+    }
+    return cfg
+
+
+# ---------------------------------------------------------------------------
+# aiohttp test client
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+async def app_client(base_cfg: dict[str, Any], aiohttp_client: Any) -> TestClient:
+    """Return an aiohttp test client wired to a fresh app instance."""
+    stats.reset()
+    app = create_app(base_cfg)
+    return await aiohttp_client(app)
+
+
+@pytest.fixture
+async def yaml_app_client(yaml_cfg: dict[str, Any], aiohttp_client: Any) -> TestClient:
+    """Return an aiohttp test client configured with the YAML backend."""
+    stats.reset()
+    app = create_app(yaml_cfg)
+    return await aiohttp_client(app)

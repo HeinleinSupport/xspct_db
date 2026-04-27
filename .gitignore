@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Hatch
+.hatch/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Type checkers
+.mypy_cache/
+.ruff_cache/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# Config with secrets (never commit real configs)
+config.yml
+*.local.yml

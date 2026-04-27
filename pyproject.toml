@@ -1,0 +1,89 @@
+# SPDX-License-Identifier: EUPL-1.2
+# SPDX-FileCopyrightText: 2026 Carsten Rosenberg <c.rosenberg@heinlein-support.de>
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "xspct_db"
+version = "0.6.0"
+description = "Multi-backend database query service with Redis caching and Rspamd integration"
+readme = "README.md"
+license = { text = "EUPL-1.2" }
+authors = [
+  { name = "Carsten Rosenberg", email = "c.rosenberg@heinlein-support.de" },
+]
+requires-python = ">=3.10"
+keywords = ["rspamd", "ldap", "mysql", "redis", "email", "aiohttp"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: No Input/Output (Daemon)",
+  "Framework :: AsyncIO",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: European Union Public Licence 1.2 (EUPL 1.2)",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Communications :: Email :: Filters",
+  "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+]
+
+dependencies = [
+  "aiohttp>=3.9",
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+ldap = [
+  "bonsai>=1.5",
+]
+mysql = [
+  "aiomysql>=0.2",
+]
+redis = [
+  "redis>=5.0",
+]
+uvloop = [
+  "uvloop>=0.19",
+]
+all = [
+  "bonsai>=1.5",
+  "aiomysql>=0.2",
+  "redis>=5.0",
+  "uvloop>=0.19",
+]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+  "pytest-aiohttp>=1.0",
+  "pytest-cov>=5.0",
+  "aioresponses>=0.7",
+  "fakeredis>=2.23",
+]
+
+[project.scripts]
+xspct-db = "xspct_db.__main__:main"
+xspct-db-test-client = "xspct_db.test_client:main"
+
+[project.urls]
+Repository = "https://github.com/heinlein-support/xspct_db"
+Issues = "https://github.com/heinlein-support/xspct_db/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/xspct_db"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["src/xspct_db"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
