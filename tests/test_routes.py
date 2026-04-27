@@ -34,24 +34,24 @@ async def test_metrics_unauthenticated(app_client):
 
 
 # ---------------------------------------------------------------------------
-# /query/v1/{user}
+# /v1/query/{user}
 # ---------------------------------------------------------------------------
 
 async def test_query_missing_api_key(app_client):
-    resp = await app_client.get("/query/v1/user@example.com")
+    resp = await app_client.get("/v1/query/user@example.com")
     assert resp.status == 401
 
 
 async def test_query_wrong_api_key(app_client):
     resp = await app_client.get(
-        "/query/v1/user@example.com", headers={"X-Api-Key": "wrong"}
+        "/v1/query/user@example.com", headers={"X-Api-Key": "wrong"}
     )
     assert resp.status == 401
 
 
 async def test_query_dummy_backend(app_client):
     resp = await app_client.get(
-        "/query/v1/user@example.com", headers={"X-Api-Key": "test-key"}
+        "/v1/query/user@example.com", headers={"X-Api-Key": "test-key"}
     )
     assert resp.status == 200
     data = json.loads(await resp.text())
@@ -59,12 +59,12 @@ async def test_query_dummy_backend(app_client):
 
 
 # ---------------------------------------------------------------------------
-# /query/v1/{user} with YAML backend
+# /v1/query/{user} with YAML backend
 # ---------------------------------------------------------------------------
 
 async def test_query_yaml_known_user(yaml_app_client):
     resp = await yaml_app_client.get(
-        "/query/v1/alice@example.com", headers={"X-Api-Key": "test-key"}
+        "/v1/query/alice@example.com", headers={"X-Api-Key": "test-key"}
     )
     assert resp.status == 200
     data = json.loads(await resp.text())
@@ -75,7 +75,7 @@ async def test_query_yaml_known_user(yaml_app_client):
 
 async def test_query_yaml_unknown_user_returns_empty(yaml_app_client):
     resp = await yaml_app_client.get(
-        "/query/v1/nobody@example.com", headers={"X-Api-Key": "test-key"}
+        "/v1/query/nobody@example.com", headers={"X-Api-Key": "test-key"}
     )
     assert resp.status == 200
     data = json.loads(await resp.text())
@@ -85,18 +85,18 @@ async def test_query_yaml_unknown_user_returns_empty(yaml_app_client):
 async def test_query_alias_lookup(yaml_app_client):
     """Query by alias should resolve to the canonical user."""
     resp = await yaml_app_client.get(
-        "/query/v1/a@example.com", headers={"X-Api-Key": "test-key"}
+        "/v1/query/a@example.com", headers={"X-Api-Key": "test-key"}
     )
     assert resp.status == 200
 
 
 # ---------------------------------------------------------------------------
-# /rspamd-settings/v1
+# /v1/rspamd-settings
 # ---------------------------------------------------------------------------
 
 async def test_rspamd_settings_auth_required(app_client):
     resp = await app_client.post(
-        "/rspamd-settings/v1",
+        "/v1/rspamd-settings",
         data=json.dumps({}),
         headers={"Content-Type": "application/json"},
     )
@@ -105,7 +105,7 @@ async def test_rspamd_settings_auth_required(app_client):
 
 async def test_rspamd_settings_valid(app_client):
     resp = await app_client.post(
-        "/rspamd-settings/v1",
+        "/v1/rspamd-settings",
         data=json.dumps({}),
         headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
     )

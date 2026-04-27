@@ -39,7 +39,7 @@ Authentication is optional and controlled by `xspct_db_metrics_auth`.
 
 ## Query Endpoints
 
-### `GET /query/v1/{user}`
+### `GET /v1/query/{user}`
 
 Look up a single user across all configured query backends.
 
@@ -67,7 +67,7 @@ Returns `504` when a per-request timeout is exceeded.
 
 ---
 
-### `POST /query-json/v1`
+### `POST /v1/query-json`
 
 Batch lookup for multiple users in a single request.
 
@@ -84,11 +84,11 @@ Batch lookup for multiple users in a single request.
 }
 ```
 
-**Response:** same shape as `/query/v1/{user}` but containing all matched users.
+**Response:** same shape as `/v1/query/{user}` but containing all matched users.
 
 ---
 
-### `POST /rspamd-settings/v1`
+### `POST /v1/rspamd-settings`
 
 Returns an Rspamd settings blob for the queried user.
 Intended for use with the Rspamd `settings_redis` or HTTP settings module.
