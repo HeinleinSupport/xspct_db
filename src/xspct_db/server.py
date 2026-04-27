@@ -96,7 +96,31 @@ def run(config_path: str) -> None:
         stream=sys.stdout,
         level=int(config["xspct_db_log_level"]),
         format=config["xspct_db_log_prefix"] + " %(levelname)s %(funcName)s %(message)s",
+        force=True,
     )
+
+    # Log runtime configuration for diagnostics
+    logger.info("listen address: %s (type: %s)", config["xspct_db_listen_address"], type(config["xspct_db_listen_address"]))
+    logger.info("listen port: %s (type: %s)", config["xspct_db_listen_port"], type(config["xspct_db_listen_port"]))
+    logger.info("log level: %s (type: %s)", config["xspct_db_log_level"], type(config["xspct_db_log_level"]))
+    logger.info("TLS enabled: %s (type: %s)", config["xspct_db_tls"]["tls_enabled"], type(config["xspct_db_tls"]["tls_enabled"]))
+    if config["xspct_db_tls"]["tls_enabled"]:
+        logger.info("TLS cert: %s", config["xspct_db_tls"]["tls_cert"])
+        logger.info("TLS key: %s", config["xspct_db_tls"]["tls_key"])
+    logger.info("api header: %s (type: %s)", config["xspct_db_api_header"], type(config["xspct_db_api_header"]))
+    logger.info("api key: [REDACTED] (count: %s)", len(config["xspct_db_api_key"]))
+    logger.info("api key verify fail: %s (type: %s)", config["xspct_db_api_key_verify_fail"], type(config["xspct_db_api_key_verify_fail"]))
+    logger.info("rspamd header: %s (type: %s)", config["xspct_db_rspamd_header"], type(config["xspct_db_rspamd_header"]))
+    logger.info("request timeout: %s (type: %s)", config["xspct_db_request_timeout"], type(config["xspct_db_request_timeout"]))
+    logger.info("request timeout header: %s (type: %s)", config["xspct_db_request_timeout_header"], type(config["xspct_db_request_timeout_header"]))
+    for qk, qv in config.get("xspct_db_queries", {}).items():
+        if "db_type" in qv:
+            logger.info("db query - name: %s (type: %s)", qk, qv["db_type"])
+        else:
+            logger.info("db query - NO db_type found: %s", qk)
+    yaml_data = config.get("xspct_db_yaml_data", {})
+    if yaml_data:
+        logger.info("default yaml entries found: %s (type: %s)", len(yaml_data), type(yaml_data))
 
     if uvloop is not None:
         asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())

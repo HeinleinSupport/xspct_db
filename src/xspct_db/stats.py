@@ -54,7 +54,64 @@ def update_query_stats(qk: str, elapsed: float) -> None:
         entry["time_max"] = elapsed
 
 
-def log_stats() -> None:
+def sample_pool_connections(cfg: dict[str, Any]) -> None:
+    """Sample open connection counts for all pools and accumulate into ``stats['pool_connections']``."""
+
+    def _record(key: str, open_conns: int, limit: int | None = None) -> None:
+        if open_conns < 0:
+            return
+        s = stats["pool_connections"].setdefault(
+            key, {"min": float("inf"), "max": 0, "sum": 0.0, "count": 0, "limit": None}
+        )
+        if s["limit"] is None and limit is not None:
+            s["limit"] = limit
+        if open_conns < s["min"]:
+            s["min"] = open_conns
+        if open_conns > s["max"]:
+            s["max"] = open_conns
+        s["sum"] += open_conns
+        s["count"] += 1
+
+    # Redis
+    from xspct_db import cache  # local import to avoid circular deps
+    if cache.connection is not None:
+        pool = cache.connection.connection_pool
+        try:
+            rc = pool._created_connections
+        except AttributeError:
+            try:
+                rc = len(pool._in_use_connections) + len(pool._available_connections)
+            except (AttributeError, TypeError):
+                rc = -1
+        redis_limit = int(cfg["xspct_db_redis_cache"].get("max_connections", -1))
+        _record("redis", rc, limit=redis_limit if redis_limit > 0 else None)
+
+    # LDAP
+    if cfg.get("xspct_db_types_enabled", {}).get("ldap"):
+        try:
+            from xspct_db.backends import ldap_backend
+            for qk, pool in ldap_backend._pools.items():
+                try:
+                    _record(qk, pool.size, limit=getattr(pool, "maxconn", None))
+                except Exception:
+                    pass
+        except ImportError:
+            pass
+
+    # MySQL
+    if cfg.get("xspct_db_types_enabled", {}).get("mysql"):
+        try:
+            from xspct_db.backends import mysql_backend
+            for qk, pool in mysql_backend._pools.items():
+                try:
+                    _record(qk, pool.size, limit=getattr(pool, "maxsize", None))
+                except Exception:
+                    pass
+        except ImportError:
+            pass
+
+
+def log_stats(cfg: dict[str, Any]) -> None:
     """Emit a stats summary at INFO level."""
     logger.info(
         "STATS requests_total=%d requests_known=%d requests_unknown=%d",
@@ -62,17 +119,89 @@ def log_stats() -> None:
         stats["requests_known"],
         stats["requests_unknown"],
     )
+
+    # Redis hit/miss counters
+    from xspct_db import cache  # local import to avoid circular deps
+    if cache.connection is not None:
+        redis_hits = stats["redis_hits"]
+        redis_misses = stats["redis_misses"]
+        redis_neg_hits = stats["redis_negative_hits"]
+        total_lookups = redis_hits + redis_misses + redis_neg_hits
+        hit_rate = (redis_hits / total_lookups * 100) if total_lookups > 0 else 0.0
+        logger.info(
+            "STATS redis_hits=%d redis_misses=%d redis_neg_hits=%d redis_hit_rate=%.1f%%",
+            redis_hits, redis_misses, redis_neg_hits, hit_rate,
+        )
+
+    # Connection snapshot line
+    conn_parts: list[str] = []
+    if cache.connection is not None:
+        pool = cache.connection.connection_pool
+        try:
+            rc = pool._created_connections
+        except AttributeError:
+            try:
+                rc = len(pool._in_use_connections) + len(pool._available_connections)
+            except (AttributeError, TypeError):
+                rc = -1
+        conn_parts.append(f"redis_connections={rc}")
+
+    if cfg.get("xspct_db_types_enabled", {}).get("ldap"):
+        try:
+            from xspct_db.backends import ldap_backend
+            if ldap_backend._pools:
+                ldap_info = {}
+                for qk, pool in ldap_backend._pools.items():
+                    try:
+                        ldap_info[qk] = pool.size
+                    except Exception:
+                        ldap_info[qk] = -1
+                conn_parts.append(f"ldap_pools={ldap_info}")
+        except ImportError:
+            pass
+
+    if cfg.get("xspct_db_types_enabled", {}).get("mysql"):
+        try:
+            from xspct_db.backends import mysql_backend
+            if mysql_backend._pools:
+                mysql_info = {}
+                for qk, pool in mysql_backend._pools.items():
+                    try:
+                        mysql_info[qk] = {"size": pool.size, "free": pool.freesize}
+                    except Exception:
+                        mysql_info[qk] = -1
+                conn_parts.append(f"mysql_pools={mysql_info}")
+        except ImportError:
+            pass
+
+    if conn_parts:
+        logger.info("STATS %s", " ".join(conn_parts))
+
+    # Per-pool connection min/avg/max
+    for pk, ps in stats["pool_connections"].items():
+        if ps["count"] > 0:
+            avg = ps["sum"] / ps["count"]
+            pmin = ps["min"] if ps["min"] != float("inf") else 0
+            limit = ps.get("limit")
+            hint = (
+                f" limit={limit} LIMIT_REACHED"
+                if limit is not None and ps["max"] >= limit
+                else ""
+            )
+            logger.info(
+                "STATS pool[%s] conns min=%d avg=%.1f max=%d%s",
+                pk, pmin, avg, ps["max"], hint,
+            )
+    stats["pool_connections"].clear()
+
+    # Per-query timing
     for qk, qs in stats["queries"].items():
         if qs["count"] > 0:
             avg = qs["time_total"] / qs["count"]
             qmin = qs["time_min"] if qs["time_min"] != float("inf") else 0.0
             logger.info(
                 "STATS query[%s] count=%d avg=%.5fs min=%.5fs max=%.5fs",
-                qk,
-                qs["count"],
-                avg,
-                qmin,
-                qs["time_max"],
+                qk, qs["count"], avg, qmin, qs["time_max"],
             )
 
 
@@ -84,6 +213,7 @@ async def log_stats_periodically(cfg: dict[str, Any]) -> None:
     while True:
         await asyncio.sleep(sample_interval)
         elapsed += sample_interval
+        sample_pool_connections(cfg)
         if elapsed >= interval:
-            log_stats()
+            log_stats(cfg)
             elapsed = 0.0

@@ -75,6 +75,29 @@ def _prometheus_lines(s_stats: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _log_request(s: str, request: web.Request, body: Any = None) -> None:
+    """Emit a DEBUG line with method, URL, all headers (API key masked), and optional body."""
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+    api_header = "X-Api-Key"
+    headers: dict[str, str] = {}
+    for name, value in request.headers.items():
+        if name.lower() == api_header.lower() and len(value) > 4:
+            headers[name] = value[:4] + "…"
+        else:
+            headers[name] = value
+    params = dict(request.rel_url.query)
+    logger.debug(
+        "%s %s %s  params=%s  headers=%s  body=%s",
+        s,
+        request.method,
+        request.path,
+        params or "-",
+        headers,
+        body if body is not None else "-",
+    )
+
+
 async def _backend_query(
     s: str,
     user: str,
@@ -187,6 +210,8 @@ class QueryView(PydanticView):
         s_id = generate_session_id()
         s = add_rspamd_id(s_id, self.request.headers.get(cfg["xspct_db_rspamd_header"]))
 
+        _log_request(s, self.request)
+
         if not verify_api_key(s, self.request.headers.get(cfg["xspct_db_api_header"]), cfg):
             return web.Response(status=401, text="401 Unauthorized")
 
@@ -291,6 +316,8 @@ class QueryJsonView(PydanticView):
         s_id = generate_session_id()
         s = add_rspamd_id(s_id, self.request.headers.get(cfg["xspct_db_rspamd_header"]))
 
+        _log_request(s, self.request, body=body.model_dump())
+
         if not verify_api_key(s, self.request.headers.get(cfg["xspct_db_api_header"]), cfg):
             return web.Response(status=401, text="401 Unauthorized")
 
@@ -327,9 +354,9 @@ class RspamdSettingsView(PydanticView):
 
             {
                 "actions": {
-                    "reject": 17,
-                    "greylist": 10,
-                    "add header": 14
+                    "reject": 15,
+                    "greylist": 8,
+                    "add header": 13
                 },
                 "flags": ["skip_process", "no_stat"],
                 "groups_disabled": ["antivirus", "external_services"],
@@ -342,14 +369,16 @@ class RspamdSettingsView(PydanticView):
         s_id = generate_session_id()
         s = add_rspamd_id(s_id, self.request.headers.get(cfg["xspct_db_rspamd_header"]))
 
+        _log_request(s, self.request)
+
         if not verify_api_key(s, self.request.headers.get(cfg["xspct_db_api_header"]), cfg):
             return web.Response(status=401, text="401 Unauthorized")
 
         reply = RspamdSettingsResponse(
-            actions={"reject": 17, "greylist": 10, "add header": 14},
-            flags=["skip_process", "no_stat"],
-            groups_disabled=["antivirus", "external_services"],
-            symbols=["INCOMING_API_TEST", "INCOMING"],
+            actions={"reject": 15, "greylist": 8, "add header": 13},
+            # flags=["skip_process", "no_stat"],
+            # groups_disabled=["antivirus", "external_services"],
+            symbols=["SETTINGS_API_TEST_RESPONSE"],
         )
         return web.json_response(reply.model_dump(), headers={"Connection": "Keep-Alive"})
 
