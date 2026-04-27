@@ -63,6 +63,12 @@ dev = [
   "aioresponses>=0.7",
   "fakeredis>=2.23",
 ]
+docs = [
+  "sphinx>=7.0",
+  "furo>=2024.1",
+  "sphinx-autodoc-typehints>=2.0",
+  "myst-parser>=3.0",
+]
 
 [project.scripts]
 xspct-db = "xspct_db.__main__:main"
