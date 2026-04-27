@@ -7,8 +7,10 @@ version = 1
 [[annotations]]
 path = [
     ".github/agents/xspct_db.agent.md",
+    ".github/copilot-instructions.md",
     ".gitignore",
     ".reuseignore",
+    "CLAUDE.md",
     "docs/**",
 ]
 SPDX-FileCopyrightText = "2026 Carsten Rosenberg <c.rosenberg@heinlein-support.de>"
