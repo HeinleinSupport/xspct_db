@@ -1,2 +1,28 @@
-SPDX-License-Identifier: EUPL-1.2
-SPDX-FileCopyrightText: 2026 Carsten Rosenberg <c.rosenberg@heinlein-support.de>
+# SPDX-License-Identifier: EUPL-1.2
+# SPDX-FileCopyrightText: 2026 Carsten Rosenberg <c.rosenberg@heinlein-support.de>
+
+version = 1
+
+# ── Agent / documentation / config files ────────────────────────────────────
+[[annotations]]
+path = [
+    ".github/agents/xspct_db.agent.md",
+    ".gitignore",
+    ".reuseignore",
+    "docs/**",
+]
+SPDX-FileCopyrightText = "2026 Carsten Rosenberg <c.rosenberg@heinlein-support.de>"
+SPDX-License-Identifier = "EUPL-1.2"
+
+# ── Generated build and cache artifacts ─────────────────────────────────────
+[[annotations]]
+path = [
+    ".pytest_cache/**",
+    "src/xspct_db.egg-info/**",
+    "src/xspct_db/__pycache__/**",
+    "tests/__pycache__/**",
+    "docs/_build/**",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Carsten Rosenberg <c.rosenberg@heinlein-support.de>"
+SPDX-License-Identifier = "EUPL-1.2"

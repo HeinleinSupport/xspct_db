@@ -8,6 +8,7 @@ xspct_db
    guide/installation
    guide/configuration
    guide/api
+   guide/development
 
 .. toctree::
    :maxdepth: 2
