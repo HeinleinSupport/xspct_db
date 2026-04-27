@@ -13,9 +13,12 @@ from typing import Any
 
 from aiohttp import web
 
+from aiohttp_pydantic import oas
+
 from xspct_db import cache, stats
 from xspct_db import config as cfg_mod
-from xspct_db.routes import routes
+from xspct_db import __version__
+from xspct_db.routes import setup_routes
 
 try:
     import uvloop
@@ -74,7 +77,12 @@ def create_app(config: dict[str, Any]) -> web.Application:
     """Build and return the aiohttp :class:`~aiohttp.web.Application`."""
     app = web.Application()
     app["config"] = config
-    app.add_routes(routes)
+    setup_routes(app)
+    oas.setup(
+        app,
+        title_spec="xspct_db",
+        version_spec=__version__,
+    )
     app.on_startup.append(_on_startup)
     app.on_shutdown.append(_on_shutdown)
     return app
