@@ -86,6 +86,5 @@ html_theme_options = {
 
 myst_enable_extensions = ["colon_fence", "deflist"]
 source_suffix = {
-    ".rst": "restructuredtext",
     ".md": "markdown",
 }
