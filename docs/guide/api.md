@@ -90,12 +90,23 @@ Batch lookup for multiple users in a single request.
 
 ### `POST /v1/rspamd-settings`
 
-Returns an Rspamd settings blob for the queried user.
-Intended for use with the Rspamd `settings_redis` or HTTP settings module.
+Returns an Rspamd settings blob for use with the Rspamd HTTP settings module.
 
 **Authentication:** `X-Api-Key` header
 
-**Request body:** same JSON format as `/query-json/v1`
+**Request body:** empty JSON object or no body
 
-**Response:** plain-text Rspamd settings in UCL format with
-`Content-Type: text/plain; version=0.0.4; charset=utf-8`.
+**Response** (`application/json`):
+
+```json
+{
+  "actions": {
+    "reject": 17,
+    "greylist": 10,
+    "add header": 14
+  },
+  "flags": ["skip_process", "no_stat"],
+  "groups_disabled": ["antivirus", "external_services"],
+  "symbols": ["INCOMING_API_TEST", "INCOMING"]
+}
+```

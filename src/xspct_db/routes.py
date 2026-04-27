@@ -156,6 +156,29 @@ class QueryView(PydanticView):
 
         The ``user`` path segment is URL-decoded before lookup.
         Redis cache is consulted first when enabled.
+
+        **Example request**::
+
+            GET /v1/query/alice@example.com
+            X-Api-Key: your-key
+
+        **Example response (user found)**::
+
+            {
+                "users": {
+                    "alice@example.com": {
+                        "mail": "alice@example.com",
+                        "uid": "alice",
+                        "aliases": ["a.smith@example.com"]
+                    }
+                }
+            }
+
+        **Example response (user not found)**::
+
+            {"users": {}}
+
+        Returns ``504`` if the backend query exceeds the configured timeout.
         """
         timer("start")
         stats.stats["requests_total"] += 1
@@ -234,6 +257,34 @@ class QueryJsonView(PydanticView):
 
         Accepts a list of users and queries all configured backends for each.
         Redis cache is **not** consulted or populated on batch requests.
+
+        **Example request**::
+
+            POST /v1/query-json
+            Content-Type: application/json
+            X-Api-Key: your-key
+
+            {
+                "users": [
+                    {"username": "alice@example.com"},
+                    {"username": "bob@example.com"}
+                ]
+            }
+
+        **Example response**::
+
+            {
+                "users": {
+                    "alice@example.com": {
+                        "mail": "alice@example.com",
+                        "uid": "alice",
+                        "aliases": ["a.smith@example.com"]
+                    },
+                    "bob@example.com": {}
+                }
+            }
+
+        Users not found in any backend are returned with an empty dict.
         """
         timer("start")
         cfg: dict[str, Any] = self.request.app["config"]
@@ -266,6 +317,25 @@ class RspamdSettingsView(PydanticView):
 
         Returns an Rspamd settings blob for use with the Rspamd HTTP settings module.
         The response ``Content-Type`` is ``application/json``.
+
+        **Example request**::
+
+            POST /v1/rspamd-settings
+            X-Api-Key: your-key
+
+        **Example response**::
+
+            {
+                "actions": {
+                    "reject": 17,
+                    "greylist": 10,
+                    "add header": 14
+                },
+                "flags": ["skip_process", "no_stat"],
+                "groups_disabled": ["antivirus", "external_services"],
+                "symbols": ["INCOMING_API_TEST", "INCOMING"]
+            }
+
         """
         timer("start")
         cfg: dict[str, Any] = self.request.app["config"]
