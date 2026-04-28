@@ -88,27 +88,25 @@ def sample_pool_connections(cfg: dict[str, Any]) -> None:
 
     # LDAP
     if cfg.get("xspct_db_types_enabled", {}).get("ldap"):
-        try:
-            from xspct_db.backends import ldap_backend
-            for qk, pool in ldap_backend._pools.items():
+        import sys as _sys
+        _ldap_mod = _sys.modules.get("xspct_db.backends.ldap_backend")
+        if _ldap_mod is not None:
+            for qk, pool in _ldap_mod._pools.items():
                 try:
                     _record(qk, pool.size, limit=getattr(pool, "maxconn", None))
                 except Exception:
                     pass
-        except ImportError:
-            pass
 
     # MySQL
     if cfg.get("xspct_db_types_enabled", {}).get("mysql"):
-        try:
-            from xspct_db.backends import mysql_backend
-            for qk, pool in mysql_backend._pools.items():
+        import sys as _sys
+        _mysql_mod = _sys.modules.get("xspct_db.backends.mysql_backend")
+        if _mysql_mod is not None:
+            for qk, pool in _mysql_mod._pools.items():
                 try:
                     _record(qk, pool.size, limit=getattr(pool, "maxsize", None))
                 except Exception:
                     pass
-        except ImportError:
-            pass
 
 
 def log_stats(cfg: dict[str, Any]) -> None:
