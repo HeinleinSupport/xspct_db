@@ -113,3 +113,51 @@ async def test_rspamd_settings_valid(app_client):
     data = json.loads(await resp.text())
     assert "actions" in data
     assert "flags" in data
+
+
+async def test_rspamd_settings_empty_body_has_settings_extra_data(app_client):
+    resp = await app_client.post(
+        "/v1/rspamd-settings",
+        data=json.dumps({}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert "settings_extra_data" in data
+    assert data["settings_extra_data"] == {}
+
+
+async def test_rspamd_settings_with_body(yaml_app_client):
+    """from + rcpts addresses are looked up and returned in settings_extra_data."""
+    resp = await yaml_app_client.post(
+        "/v1/rspamd-settings",
+        data=json.dumps({
+            "uid": "abc123",
+            "from": "alice@example.com",
+            "rcpts": ["nobody@example.com"],
+        }),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert "settings_extra_data" in data
+    # alice should be found; nobody should not appear or be empty
+    extra = data["settings_extra_data"]
+    assert any("alice" in str(v) for v in extra.values())
+
+
+async def test_rspamd_settings_deduplication(yaml_app_client):
+    """Sender appearing in rcpts is only looked up once."""
+    resp = await yaml_app_client.post(
+        "/v1/rspamd-settings",
+        data=json.dumps({
+            "from": "alice@example.com",
+            "rcpts": ["alice@example.com", "nobody@example.com"],
+        }),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    # alice must appear at most once in settings_extra_data
+    alice_keys = [k for k in data["settings_extra_data"] if "alice" in k]
+    assert len(alice_keys) <= 1

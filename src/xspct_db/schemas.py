@@ -19,16 +19,25 @@ class QueryResponse(BaseModel):
     )
 
 
-class UserInput(BaseModel):
-    """A single lookup target."""
-
-    username: str = Field(..., description="Email address or username to look up.")
-
-
 class QueryJsonRequest(BaseModel):
     """Request body for the batch query endpoint."""
 
-    users: list[UserInput] = Field(..., description="List of users to look up.")
+    users: list[str] = Field(default_factory=list, description="List of users to look up.")
+
+
+class RspamdSettingsRequest(BaseModel):
+    """Request body sent by Rspamd to the settings HTTP module."""
+
+    uid: str = Field(default="", description="Rspamd session UID.")
+    from_addr: str = Field(default="", alias="from", description="Envelope sender.")
+    rcpts: list[str] = Field(default_factory=list, description="Envelope recipients.")
+    mta_name: str | None = Field(default=None, alias="mta-name", description="MTA name reported by Rspamd.")
+    mta_host: str | None = Field(default=None, alias="mta-host", description="MTA hostname reported by Rspamd.")
+    ip: str | None = Field(default=None, description="Client IP address.")
+    settings_name: str | None = Field(default=None, alias="settings-name", description="Rspamd settings name.")
+    settings_id: str | None = Field(default=None, alias="settings-id", description="Rspamd settings ID.")
+
+    model_config = {"populate_by_name": True}
 
 
 class RspamdSettingsResponse(BaseModel):
@@ -41,8 +50,25 @@ class RspamdSettingsResponse(BaseModel):
     groups_disabled: list[str] = Field(
         default_factory=list, description="Rspamd groups to disable."
     )
+    groups_enabled: list[str] = Field(
+        default_factory=list, description="Rspamd groups to enable."
+    )
+    symbols_disabled: list[str] = Field(
+        default_factory=list, description="Rspamd symbols to disable."
+    )
+    symbols_enabled: list[str] = Field(
+        default_factory=list, description="Rspamd symbols to enable."
+    )
     symbols: list[str] = Field(
         default_factory=list, description="Rspamd symbols to force."
+    )
+    settings_extra_data: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description="User data for addresses found in from/rcpts.",
+    )
+    settings_error: list[str] = Field(
+        default_factory=list,
+        description="Error messages produced during settings evaluation.",
     )
 
 

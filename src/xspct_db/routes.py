@@ -21,6 +21,7 @@ from xspct_db.schemas import (
     ErrorResponse,
     QueryJsonRequest,
     QueryResponse,
+    RspamdSettingsRequest,
     RspamdSettingsResponse,
 )
 from xspct_db.utils import add_rspamd_id, generate_session_id, timer
@@ -197,6 +198,11 @@ class QueryView(PydanticView):
         The ``user`` path segment is URL-decoded before lookup.
         Redis cache is consulted first when enabled.
 
+        **Example curl**::
+
+            curl -s -H "X-Api-Key: your-key" \
+                 http://localhost:11350/v1/query/alice@example.com | python3 -m json.tool
+
         **Example request**::
 
             GET /v1/query/alice@example.com
@@ -293,12 +299,19 @@ class QueryView(PydanticView):
 
 
 class QueryJsonView(PydanticView):
-    async def post(self, body: QueryJsonRequest) -> r200[QueryResponse] | r401[ErrorResponse] | r500[ErrorResponse]:
+    async def post(self) -> r200[QueryResponse] | r401[ErrorResponse] | r500[ErrorResponse]:
         """
         Batch user lookup.
 
         Accepts a list of users and queries all configured backends for each.
         Redis cache is **not** consulted or populated on batch requests.
+
+        **Example curl**::
+
+            curl -s -X POST http://localhost:11350/v1/query-json \
+                 -H "X-Api-Key: your-key" \
+                 -H "Content-Type: application/json" \
+                 -d '{"users": ["alice@example.com", "bob@example.com"]}' | python3 -m json.tool
 
         **Example request**::
 
@@ -308,8 +321,8 @@ class QueryJsonView(PydanticView):
 
             {
                 "users": [
-                    {"username": "alice@example.com"},
-                    {"username": "bob@example.com"}
+                    "alice@example.com",
+                    "bob@example.com"
                 ]
             }
 
@@ -333,12 +346,26 @@ class QueryJsonView(PydanticView):
         s_id = generate_session_id()
         s = add_rspamd_id(s_id, self.request.headers.get(cfg["xspct_db_rspamd_header"]))
 
-        _log_request(s, self.request, body=body.model_dump())
+        raw_body = await self.request.read()
+        try:
+            parsed_body: Any = json.loads(raw_body) if raw_body else None
+        except Exception:
+            parsed_body = raw_body.decode() if raw_body else None
+
+        query_req = QueryJsonRequest.model_validate(
+            parsed_body if isinstance(parsed_body, dict) else {}
+        )
+
+        _log_request(s, self.request, body=parsed_body)
 
         if not verify_api_key(s, self.request.headers.get(cfg["xspct_db_api_header"]), cfg):
             return _log_response(s, web.Response(status=401, text="401 Unauthorized"))
 
-        users = [{"username": u.username} for u in body.users]
+        users = [{
+            "username": u,
+            "userpart": u.split("@", 1)[0],
+            "domain": u.split("@", 1)[-1],
+        } for u in query_req.users]
         userdata: dict[str, Any] = {"users": {}}
         user_to_pkey: dict[str, Any] = {}
 
@@ -362,6 +389,13 @@ class RspamdSettingsView(PydanticView):
         Returns an Rspamd settings blob for use with the Rspamd HTTP settings module.
         The response ``Content-Type`` is ``application/json``.
 
+        **Example curl**::
+
+            curl -s -X POST http://localhost:11350/v1/rspamd-settings \
+                 -H "X-Api-Key: your-key" \
+                 -H "Content-Type: application/json" \
+                 -d '{"from": "alice@example.com", "rcpts": ["bob@example.com"]}' | python3 -m json.tool
+
         **Example request**::
 
             POST /v1/rspamd-settings
@@ -384,23 +418,51 @@ class RspamdSettingsView(PydanticView):
         timer("start")
         cfg: dict[str, Any] = self.request.app["config"]
         s_id = generate_session_id()
-        s = add_rspamd_id(s_id, self.request.headers.get(cfg["xspct_db_rspamd_header"]))
 
+        # Read and parse body first so uid is available for the session tag
         raw_body = await self.request.read()
         try:
-            parsed_body = json.loads(raw_body) if raw_body else None
+            parsed_body: Any = json.loads(raw_body) if raw_body else None
         except Exception:
             parsed_body = raw_body.decode() if raw_body else None
+
+        rspamd_req = RspamdSettingsRequest.model_validate(
+            parsed_body if isinstance(parsed_body, dict) else {}
+        )
+
+        # Prefer uid from body, fall back to X-Rspamd-ID header
+        rspamd_id = rspamd_req.uid or self.request.headers.get(cfg["xspct_db_rspamd_header"])
+        s = add_rspamd_id(s_id, rspamd_id)
+
         _log_request(s, self.request, body=parsed_body)
 
         if not verify_api_key(s, self.request.headers.get(cfg["xspct_db_api_header"]), cfg):
             return _log_response(s, web.Response(status=401, text="401 Unauthorized"))
 
+        # Look up all addresses from envelope sender + recipients
+        addresses = list(dict.fromkeys(
+            addr for addr in ([rspamd_req.from_addr] + rspamd_req.rcpts) if addr
+        ))
+        userdata: dict[str, Any] = {"users": {}}
+        user_to_pkey: dict[str, Any] = {}
+
+        if addresses:
+            from xspct_db.backends import run_queries
+            users = [{
+                "username": addr,
+                "userpart": addr.split("@", 1)[0],
+                "domain": addr.split("@", 1)[-1],
+            } for addr in addresses]
+            userdata, user_to_pkey, _ = await run_queries(
+                s, "", False, users, userdata, user_to_pkey, cfg
+            )
+
         reply = RspamdSettingsResponse(
             actions={"reject": 15, "greylist": 8, "add header": 13},
-            # flags=["skip_process", "no_stat"],
             symbols_disabled=["DKIM_SIGNED"],
             symbols=["SETTINGS_API_TEST_RESPONSE"],
+            settings_extra_data=userdata["users"],
+            settings_error=[],
         )
         return _log_response(s, web.json_response(reply.model_dump(), headers={"Connection": "Keep-Alive"}))
 
