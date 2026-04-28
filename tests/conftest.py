@@ -80,6 +80,12 @@ def base_cfg() -> dict[str, Any]:
             "expire_negative": 20,
             "max_entries": 10000,
         },
+        "xspct_db_response_cache": {
+            "enabled": False,
+            "expire": 10,
+            "max_entries": 5000,
+            "rspamd_key_fields": ["from", "rcpts", "mta-name", "settings-name", "settings-id"],
+        },
     }
 
 
@@ -125,3 +131,28 @@ async def yaml_app_client(yaml_cfg: dict[str, Any], aiohttp_client: Any) -> Test
     stats.reset()
     app = create_app(yaml_cfg)
     return await aiohttp_client(app)
+
+
+@pytest.fixture
+def response_cache_cfg(base_cfg: dict[str, Any]) -> dict[str, Any]:
+    """base_cfg with the response cache enabled."""
+    cfg = dict(base_cfg)
+    cfg["xspct_db_response_cache"] = {
+        "enabled": True,
+        "expire": 10,
+        "max_entries": 1000,
+        "rspamd_key_fields": ["from", "rcpts", "mta-name", "settings-name", "settings-id"],
+    }
+    return cfg
+
+
+@pytest.fixture
+async def response_cache_app_client(response_cache_cfg: dict[str, Any], aiohttp_client: Any) -> TestClient:
+    """Return an aiohttp test client with response caching enabled."""
+    from xspct_db import cache as xcache
+    xcache._response_cache_clear()
+    stats.reset()
+    app = create_app(response_cache_cfg)
+    client = await aiohttp_client(app)
+    yield client
+    xcache._response_cache_clear()

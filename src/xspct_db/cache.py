@@ -29,6 +29,9 @@ _local_aliases: TTLCache | None = None   # alias/address  → canonical user key
 _local_users: TTLCache | None = None     # canonical key  → user dict
 _local_negative: TTLCache | None = None  # address        → True (absent marker)
 
+# Response cache – pre-serialised JSON bytes keyed by (endpoint, frozenset/tuple).
+_response_cache: TTLCache | None = None
+
 
 # ---------------------------------------------------------------------------
 # L1 helpers
@@ -70,6 +73,54 @@ def _ensure_l1(cfg: dict[str, Any]) -> bool:
     if _local_aliases is None:
         _init_local_caches(cfg)
     return True
+
+
+# ---------------------------------------------------------------------------
+# Response cache helpers
+# ---------------------------------------------------------------------------
+
+def _init_response_cache(cfg: dict[str, Any]) -> None:
+    """Create (or recreate) the response TTLCache from *cfg*."""
+    global _response_cache
+    rcfg = cfg["xspct_db_response_cache"]
+    maxsize = int(rcfg.get("max_entries", 5000))
+    ttl = float(rcfg.get("expire", 10))
+    _response_cache = TTLCache(maxsize=maxsize, ttl=ttl)
+
+
+def _response_cache_clear() -> None:
+    """Reset the response cache (used in tests and server restart)."""
+    global _response_cache
+    _response_cache = None
+
+
+def _response_cache_enabled(cfg: dict[str, Any]) -> bool:
+    """Return True when response caching is configured to be active."""
+    return bool(cfg["xspct_db_response_cache"].get("enabled", True))
+
+
+def _ensure_response_cache(cfg: dict[str, Any]) -> bool:
+    """Ensure the response cache exists; return True when enabled."""
+    global _response_cache
+    if not _response_cache_enabled(cfg):
+        return False
+    if _response_cache is None:
+        _init_response_cache(cfg)
+    return True
+
+
+def get_response(key: tuple, cfg: dict[str, Any]) -> bytes | None:
+    """Return cached response bytes for *key*, or ``None`` on miss/disabled."""
+    if not _ensure_response_cache(cfg):
+        return None
+    return _response_cache.get(key)  # type: ignore[union-attr]
+
+
+def set_response(key: tuple, body: bytes, cfg: dict[str, Any]) -> None:
+    """Store *body* bytes under *key* in the response cache."""
+    if not _ensure_response_cache(cfg):
+        return
+    _response_cache[key] = body  # type: ignore[index]
 
 
 # ---------------------------------------------------------------------------

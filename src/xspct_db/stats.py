@@ -21,6 +21,8 @@ stats: dict[str, Any] = {
     "requests_unknown": 0,
     "local_cache_hits": 0,
     "local_cache_misses": 0,
+    "response_cache_hits": 0,
+    "response_cache_misses": 0,
     "redis_hits": 0,
     "redis_misses": 0,
     "redis_negative_hits": 0,
@@ -38,6 +40,8 @@ def reset() -> None:
     stats["requests_unknown"] = 0
     stats["local_cache_hits"] = 0
     stats["local_cache_misses"] = 0
+    stats["response_cache_hits"] = 0
+    stats["response_cache_misses"] = 0
     stats["redis_hits"] = 0
     stats["redis_misses"] = 0
     stats["redis_negative_hits"] = 0

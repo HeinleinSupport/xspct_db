@@ -76,10 +76,16 @@ DEFAULTS: dict[str, Any] = {
         "expire_negative": 20,
         "max_entries": 10000,
     },
+    "xspct_db_response_cache": {
+        "enabled": True,
+        "expire": 10,
+        "max_entries": 5000,
+        "rspamd_key_fields": ["from", "rcpts", "mta-name", "settings-name", "settings-id"],
+    },
 }
 
 # Keys whose sub-dicts are deep-merged instead of replaced wholesale.
-_DEEP_MERGE_KEYS = ("xspct_db_redis_cache", "xspct_db_tls", "xspct_db_metrics_auth", "xspct_db_local_cache")
+_DEEP_MERGE_KEYS = ("xspct_db_redis_cache", "xspct_db_tls", "xspct_db_metrics_auth", "xspct_db_local_cache", "xspct_db_response_cache")
 
 
 def load(config_path: str) -> dict[str, Any]:

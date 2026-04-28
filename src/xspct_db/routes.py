@@ -94,6 +94,8 @@ def _prometheus_lines(s_stats: dict[str, Any]) -> str:
         ("xspct_db_requests_unknown_total", "requests_unknown", "Requests where user was not found", "counter"),
         ("xspct_db_local_cache_hits_total", "local_cache_hits", "Local in-process cache hits", "counter"),
         ("xspct_db_local_cache_misses_total", "local_cache_misses", "Local in-process cache misses", "counter"),
+        ("xspct_db_response_cache_hits_total", "response_cache_hits", "Response cache hits", "counter"),
+        ("xspct_db_response_cache_misses_total", "response_cache_misses", "Response cache misses", "counter"),
         ("xspct_db_redis_hits_total", "redis_hits", "Redis cache hits", "counter"),
         ("xspct_db_redis_misses_total", "redis_misses", "Redis cache misses", "counter"),
         ("xspct_db_redis_negative_hits_total", "redis_negative_hits", "Redis negative cache hits", "counter"),
@@ -186,6 +188,26 @@ async def _backend_query(
         return task.result()
 
     return await run_queries(s, user, use_redis, users, userdata, user_to_pkey, cfg)
+
+
+def _rspamd_cache_key(rspamd_req: Any, cfg: dict[str, Any]) -> tuple:
+    """Build a cache key tuple for a Rspamd-settings request.
+
+    Fields included in the key are configured via
+    ``xspct_db_response_cache.rspamd_key_fields``.
+    """
+    field_map = {
+        "from": rspamd_req.from_addr,
+        "rcpts": frozenset(rspamd_req.rcpts),
+        "mta-name": rspamd_req.mta_name,
+        "settings-name": rspamd_req.settings_name,
+        "settings-id": rspamd_req.settings_id,
+    }
+    key_fields: list[str] = cfg["xspct_db_response_cache"].get(
+        "rspamd_key_fields", ["from", "rcpts", "mta-name", "settings-name", "settings-id"]
+    )
+    values = tuple(field_map.get(f) for f in key_fields)
+    return ("rspamd-settings",) + values
 
 
 # ---------------------------------------------------------------------------
@@ -424,6 +446,18 @@ class QueryJsonView(PydanticView):
         if not verify_api_key(s, self.request.headers.get(cfg["xspct_db_api_header"]), cfg):
             return _log_response(s, web.Response(status=401, text="401 Unauthorized"))
 
+        # --- Response cache lookup ---
+        response_cache_key = ("query-json", frozenset(query_req.users))
+        cached_body = cache.get_response(response_cache_key, cfg)
+        if cached_body is not None:
+            stats.stats["response_cache_hits"] += 1
+            return _log_response(s, web.Response(
+                body=cached_body,
+                content_type="application/json",
+                headers={"Connection": "Keep-Alive"},
+            ))
+        stats.stats["response_cache_misses"] += 1
+
         users = [{
             "username": u,
             "address": u,
@@ -442,7 +476,13 @@ class QueryJsonView(PydanticView):
         if isinstance(query_error, str):
             return _log_response(s, web.Response(status=500, text=query_error))
 
-        return _log_response(s, web.json_response(userdata, headers={"Connection": "Keep-Alive"}))
+        response_body = json.dumps(userdata).encode()
+        cache.set_response(response_cache_key, response_body, cfg)
+        return _log_response(s, web.Response(
+            body=response_body,
+            content_type="application/json",
+            headers={"Connection": "Keep-Alive"},
+        ))
 
 
 class RspamdSettingsView(PydanticView):
@@ -512,6 +552,18 @@ class RspamdSettingsView(PydanticView):
         if not verify_api_key(s, self.request.headers.get(cfg["xspct_db_api_header"]), cfg):
             return _log_response(s, web.Response(status=401, text="401 Unauthorized"))
 
+        # --- Response cache lookup ---
+        response_cache_key = _rspamd_cache_key(rspamd_req, cfg)
+        cached_body = cache.get_response(response_cache_key, cfg)
+        if cached_body is not None:
+            stats.stats["response_cache_hits"] += 1
+            return _log_response(s, web.Response(
+                body=cached_body,
+                content_type="application/json",
+                headers={"Connection": "Keep-Alive"},
+            ))
+        stats.stats["response_cache_misses"] += 1
+
         # Look up all addresses from envelope sender + recipients
         addresses = list(dict.fromkeys(
             addr for addr in ([rspamd_req.from_addr] + rspamd_req.rcpts) if addr
@@ -538,7 +590,13 @@ class RspamdSettingsView(PydanticView):
             settings_extra_data=_build_settings_extra_data(userdata, cfg),
             settings_error=[],
         )
-        return _log_response(s, web.json_response(reply.model_dump(exclude_none=True), headers={"Connection": "Keep-Alive"}))
+        response_body = json.dumps(reply.model_dump(exclude_none=True)).encode()
+        cache.set_response(response_cache_key, response_body, cfg)
+        return _log_response(s, web.Response(
+            body=response_body,
+            content_type="application/json",
+            headers={"Connection": "Keep-Alive"},
+        ))
 
 
 # ---------------------------------------------------------------------------

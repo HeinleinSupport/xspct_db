@@ -23,11 +23,13 @@ def reset_cache_state():
     cache.error_count = 0
     cache.errors = []
     cache._local_clear()
+    cache._response_cache_clear()
     yield
     cache.connection = None
     cache.error_count = 0
     cache.errors = []
     cache._local_clear()
+    cache._response_cache_clear()
 
 
 @pytest.fixture
@@ -337,3 +339,77 @@ async def test_local_cache_disabled_falls_through(disabled_cfg):
     """When L1 is explicitly disabled and Redis is disabled, get_object() returns None."""
     result = await cache.get_object("s", "alice@mailexample.de", disabled_cfg)
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Fixtures for response cache tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def response_cache_cfg() -> dict[str, Any]:
+    return {
+        "xspct_db_response_cache": {
+            "enabled": True,
+            "expire": 10,
+            "max_entries": 100,
+            "rspamd_key_fields": ["from", "rcpts", "mta-name", "settings-name", "settings-id"],
+        },
+    }
+
+
+@pytest.fixture
+def response_cache_disabled_cfg() -> dict[str, Any]:
+    return {
+        "xspct_db_response_cache": {
+            "enabled": False,
+            "expire": 10,
+            "max_entries": 100,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Tests – response cache
+# ---------------------------------------------------------------------------
+
+def test_response_cache_miss(response_cache_cfg):
+    """get_response() returns None on a cold cache."""
+    key = ("query-json", frozenset(["alice@mailexample.de"]))
+    result = cache.get_response(key, response_cache_cfg)
+    assert result is None
+
+
+def test_response_cache_hit(response_cache_cfg):
+    """set_response() then get_response() returns the stored bytes."""
+    key = ("query-json", frozenset(["alice@mailexample.de"]))
+    body = b'{"users": {"alice@mailexample.de": {}}}'
+    cache.set_response(key, body, response_cache_cfg)
+    assert cache.get_response(key, response_cache_cfg) == body
+
+
+def test_response_cache_key_order_independent(response_cache_cfg):
+    """Different ordering of users produces the same frozenset key → same hit."""
+    body = b'{"users": {}}'
+    key1 = ("query-json", frozenset(["alice@mailexample.de", "bob@mailexample.de"]))
+    key2 = ("query-json", frozenset(["bob@mailexample.de", "alice@mailexample.de"]))
+    cache.set_response(key1, body, response_cache_cfg)
+    assert cache.get_response(key2, response_cache_cfg) == body
+
+
+def test_response_cache_different_endpoints(response_cache_cfg):
+    """query-json and rspamd-settings keys do not collide."""
+    body_qj = b'{"users": {}}'
+    body_rs = b'{"actions": {}}'
+    key_qj = ("query-json", frozenset(["alice@mailexample.de"]))
+    key_rs = ("rspamd-settings", "alice@mailexample.de", frozenset(["bob@mailexample.de"]), None, None, None)
+    cache.set_response(key_qj, body_qj, response_cache_cfg)
+    cache.set_response(key_rs, body_rs, response_cache_cfg)
+    assert cache.get_response(key_qj, response_cache_cfg) == body_qj
+    assert cache.get_response(key_rs, response_cache_cfg) == body_rs
+
+
+def test_response_cache_disabled(response_cache_disabled_cfg):
+    """get_response() returns None when the response cache is disabled."""
+    key = ("query-json", frozenset(["alice@mailexample.de"]))
+    cache.set_response(key, b"data", response_cache_disabled_cfg)
+    assert cache.get_response(key, response_cache_disabled_cfg) is None

@@ -162,3 +162,37 @@ async def test_rspamd_settings_deduplication(yaml_app_client):
     # alice must appear at most once in settings_extra_data
     alice_keys = [k for k in data["settings_extra_data"].get("users", {}) if "alice" in k]
     assert len(alice_keys) <= 1
+
+
+# ---------------------------------------------------------------------------
+# Response cache integration tests
+# ---------------------------------------------------------------------------
+
+async def test_query_json_response_cache_hit(response_cache_app_client):
+    """Second identical POST /v1/query-json is served from the response cache."""
+    from xspct_db import stats as xstats
+    payload = json.dumps({"users": ["alice@mailexample.de"]})
+    headers = {"Content-Type": "application/json", "X-Api-Key": "test-key"}
+
+    resp1 = await response_cache_app_client.post("/v1/query-json", data=payload, headers=headers)
+    assert resp1.status == 200
+
+    resp2 = await response_cache_app_client.post("/v1/query-json", data=payload, headers=headers)
+    assert resp2.status == 200
+    assert xstats.stats["response_cache_hits"] == 1
+    assert json.loads(await resp1.text()) == json.loads(await resp2.text())
+
+
+async def test_rspamd_settings_response_cache_hit(response_cache_app_client):
+    """Second identical POST /v1/rspamd-settings is served from the response cache."""
+    from xspct_db import stats as xstats
+    payload = json.dumps({"from": "alice@mailexample.de", "rcpts": ["bob@mailexample.de"]})
+    headers = {"Content-Type": "application/json", "X-Api-Key": "test-key"}
+
+    resp1 = await response_cache_app_client.post("/v1/rspamd-settings", data=payload, headers=headers)
+    assert resp1.status == 200
+
+    resp2 = await response_cache_app_client.post("/v1/rspamd-settings", data=payload, headers=headers)
+    assert resp2.status == 200
+    assert xstats.stats["response_cache_hits"] == 1
+    assert json.loads(await resp1.text()) == json.loads(await resp2.text())
