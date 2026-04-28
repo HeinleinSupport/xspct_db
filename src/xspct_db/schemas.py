@@ -50,14 +50,14 @@ class RspamdSettingsResponse(BaseModel):
     groups_disabled: list[str] = Field(
         default_factory=list, description="Rspamd groups to disable."
     )
-    groups_enabled: list[str] = Field(
-        default_factory=list, description="Rspamd groups to enable."
+    groups_enabled: list[str] | None = Field(
+        default=None, description="Rspamd groups to enable."
     )
     symbols_disabled: list[str] = Field(
         default_factory=list, description="Rspamd symbols to disable."
     )
-    symbols_enabled: list[str] = Field(
-        default_factory=list, description="Rspamd symbols to enable."
+    symbols_enabled: list[str] | None = Field(
+        default=None, description="Rspamd symbols to enable."
     )
     symbols: list[str] = Field(
         default_factory=list, description="Rspamd symbols to force."

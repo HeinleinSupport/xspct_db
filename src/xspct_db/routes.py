@@ -464,7 +464,7 @@ class RspamdSettingsView(PydanticView):
             settings_extra_data=userdata["users"],
             settings_error=[],
         )
-        return _log_response(s, web.json_response(reply.model_dump(), headers={"Connection": "Keep-Alive"}))
+        return _log_response(s, web.json_response(reply.model_dump(exclude_none=True), headers={"Connection": "Keep-Alive"}))
 
 
 # ---------------------------------------------------------------------------
