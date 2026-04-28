@@ -74,6 +74,12 @@ def base_cfg() -> dict[str, Any]:
         },
         "xspct_db_yaml_data": {},
         "xspct_db_rspamd_alias_fields": ["aliases"],
+        "xspct_db_local_cache": {
+            "enabled": False,
+            "expire": 20,
+            "expire_negative": 20,
+            "max_entries": 10000,
+        },
     }
 
 

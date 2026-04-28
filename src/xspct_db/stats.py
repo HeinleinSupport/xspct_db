@@ -19,6 +19,8 @@ stats: dict[str, Any] = {
     "requests_total": 0,
     "requests_known": 0,
     "requests_unknown": 0,
+    "local_cache_hits": 0,
+    "local_cache_misses": 0,
     "redis_hits": 0,
     "redis_misses": 0,
     "redis_negative_hits": 0,
@@ -34,6 +36,8 @@ def reset() -> None:
     stats["requests_total"] = 0
     stats["requests_known"] = 0
     stats["requests_unknown"] = 0
+    stats["local_cache_hits"] = 0
+    stats["local_cache_misses"] = 0
     stats["redis_hits"] = 0
     stats["redis_misses"] = 0
     stats["redis_negative_hits"] = 0
@@ -118,8 +122,20 @@ def log_stats(cfg: dict[str, Any]) -> None:
         stats["requests_unknown"],
     )
 
-    # Redis hit/miss counters
+    # L1 local cache hit/miss counters
     from xspct_db import cache  # local import to avoid circular deps
+    rcfg = cfg.get("xspct_db_local_cache", {})
+    if rcfg.get("enabled", False):
+        l1_hits = stats["local_cache_hits"]
+        l1_misses = stats["local_cache_misses"]
+        l1_total = l1_hits + l1_misses
+        l1_rate = (l1_hits / l1_total * 100) if l1_total > 0 else 0.0
+        logger.info(
+            "STATS local_cache_hits=%d local_cache_misses=%d local_hit_rate=%.1f%%",
+            l1_hits, l1_misses, l1_rate,
+        )
+
+    # Redis hit/miss counters
     if cache.connection is not None:
         redis_hits = stats["redis_hits"]
         redis_misses = stats["redis_misses"]

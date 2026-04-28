@@ -92,6 +92,8 @@ def _prometheus_lines(s_stats: dict[str, Any]) -> str:
         ("xspct_db_requests_total", "requests_total", "Total client requests", "counter"),
         ("xspct_db_requests_known_total", "requests_known", "Requests where user was found", "counter"),
         ("xspct_db_requests_unknown_total", "requests_unknown", "Requests where user was not found", "counter"),
+        ("xspct_db_local_cache_hits_total", "local_cache_hits", "Local in-process cache hits", "counter"),
+        ("xspct_db_local_cache_misses_total", "local_cache_misses", "Local in-process cache misses", "counter"),
         ("xspct_db_redis_hits_total", "redis_hits", "Redis cache hits", "counter"),
         ("xspct_db_redis_misses_total", "redis_misses", "Redis cache misses", "counter"),
         ("xspct_db_redis_negative_hits_total", "redis_negative_hits", "Redis negative cache hits", "counter"),
@@ -286,17 +288,36 @@ class QueryView(PydanticView):
         userdata: dict[str, Any] = {"users": {}}
         user_to_pkey: dict[str, Any] = {}
         use_redis = cfg["xspct_db_redis_cache"]["enabled"] and cache.connection is not None
+        use_local = cfg["xspct_db_local_cache"].get("enabled", True)
 
-        # --- Redis cache lookup ---
+        # --- L1 / L2 cache lookup ---
         cache_object = None
-        if use_redis:
+        if use_local or use_redis:
+            # Snapshot L1 presence *before* calling get_object so we can
+            # attribute the hit to the correct layer for stats.
+            l1_has_hit = False
+            if use_local and cache._local_aliases is not None:
+                canonical = cache._local_aliases.get(user)
+                if canonical is not None and cache._local_users is not None and canonical in cache._local_users:
+                    l1_has_hit = True
+                elif cache._local_negative is not None and user in cache._local_negative:
+                    l1_has_hit = True
+
             cache_object = await cache.get_object(s, user, cfg)
             if isinstance(cache_object, dict):
-                stats.stats["redis_hits"] += 1
+                if l1_has_hit:
+                    stats.stats["local_cache_hits"] += 1
+                else:
+                    stats.stats["redis_hits"] += 1
             elif isinstance(cache_object, bool) and not cache_object:
-                stats.stats["redis_negative_hits"] += 1
+                if l1_has_hit:
+                    stats.stats["local_cache_hits"] += 1
+                else:
+                    stats.stats["redis_negative_hits"] += 1
             else:
-                stats.stats["redis_misses"] += 1
+                if use_redis:
+                    stats.stats["redis_misses"] += 1
+                stats.stats["local_cache_misses"] += 1
 
         if isinstance(cache_object, dict):
             stats.stats["requests_known"] += 1

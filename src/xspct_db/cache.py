@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 # SPDX-FileCopyrightText: 2026 Carsten Rosenberg <c.rosenberg@heinlein-support.de>
 
-"""Redis cache layer with circuit-breaker logic."""
+"""Two-layer cache: in-process TTLCache (L1) + Redis (L2) with circuit-breaker logic."""
 
 from __future__ import annotations
 
@@ -9,13 +9,72 @@ import json
 import logging
 from typing import Any
 
+from cachetools import TTLCache
+
 logger = logging.getLogger(__name__)
 
-# Module-level state – injected / reset by server.py at startup.
-connection: Any = None  # redis.asyncio.Redis instance or None
+# ---------------------------------------------------------------------------
+# Module-level state
+# ---------------------------------------------------------------------------
+
+# Redis connection – injected by server.py at startup.
+connection: Any = None
+
+# Circuit-breaker state for Redis.
 error_count: int = 0
 errors: list[str] = []
 
+# L1 in-process TTLCache instances.  Initialised lazily by _init_local_caches().
+_local_aliases: TTLCache | None = None   # alias/address  → canonical user key
+_local_users: TTLCache | None = None     # canonical key  → user dict
+_local_negative: TTLCache | None = None  # address        → True (absent marker)
+
+
+# ---------------------------------------------------------------------------
+# L1 helpers
+# ---------------------------------------------------------------------------
+
+def _init_local_caches(cfg: dict[str, Any]) -> None:
+    """Create (or recreate) the three TTLCache instances from *cfg*."""
+    global _local_aliases, _local_users, _local_negative
+    rcfg = cfg["xspct_db_local_cache"]
+    maxsize = int(rcfg.get("max_entries", 10000))
+    ttl = float(rcfg.get("expire", 20))
+    ttl_neg = float(rcfg.get("expire_negative", 20))
+    _local_aliases = TTLCache(maxsize=maxsize, ttl=ttl)
+    _local_users = TTLCache(maxsize=maxsize, ttl=ttl)
+    _local_negative = TTLCache(maxsize=maxsize, ttl=ttl_neg)
+
+
+def _local_clear() -> None:
+    """Reset all L1 caches to empty (used in tests and server restart)."""
+    global _local_aliases, _local_users, _local_negative
+    if _local_aliases is not None:
+        _local_aliases.clear()
+    if _local_users is not None:
+        _local_users.clear()
+    if _local_negative is not None:
+        _local_negative.clear()
+
+
+def _l1_enabled(cfg: dict[str, Any]) -> bool:
+    """Return True when L1 caching is configured to be active."""
+    return bool(cfg["xspct_db_local_cache"].get("enabled", True))
+
+
+def _ensure_l1(cfg: dict[str, Any]) -> bool:
+    """Ensure L1 caches exist; return True when L1 is enabled."""
+    global _local_aliases, _local_users, _local_negative
+    if not _l1_enabled(cfg):
+        return False
+    if _local_aliases is None:
+        _init_local_caches(cfg)
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Redis helpers
+# ---------------------------------------------------------------------------
 
 def set_connection(conn: Any) -> None:
     """Inject the Redis connection object (called from server startup)."""
@@ -54,15 +113,25 @@ def is_enabled(cfg: dict[str, Any]) -> bool:
 async def get_object(
     s: str, user: str, cfg: dict[str, Any]
 ) -> dict[str, Any] | bool | None:
-    """Two-level cache lookup: alias → user key → user object.
+    """Two-level cache lookup: L1 (in-process TTLCache) → L2 (Redis).
 
     Returns:
-        dict   – cached user data
+        dict   – cached user data (positive hit)
         False  – negative cache hit (user confirmed absent)
-        None   – cache miss
+        None   – cache miss on both layers
     """
-    global connection
+    # --- L1 lookup ---
+    if _ensure_l1(cfg):
+        canonical = _local_aliases.get(user)  # type: ignore[union-attr]
+        if canonical is not None:
+            user_obj = _local_users.get(canonical)  # type: ignore[union-attr]
+            if user_obj is not None:
+                return user_obj
 
+        if user in _local_negative:  # type: ignore[operator]
+            return False
+
+    # --- L2 (Redis) lookup ---
     if not is_enabled(cfg):
         return None
 
@@ -87,7 +156,12 @@ async def get_object(
             record_error(str(exc), cfg)
             return None
         if isinstance(raw, str):
-            return json.loads(raw)
+            user_obj = json.loads(raw)
+            # Backfill L1 from Redis result.
+            if _ensure_l1(cfg):
+                _local_aliases[user] = alias  # type: ignore[index]
+                _local_users[alias] = user_obj  # type: ignore[index]
+            return user_obj
     else:
         key_neg = redis_cfg["prefix_negative_alias"] + user
         try:
@@ -97,6 +171,9 @@ async def get_object(
             record_error(str(exc), cfg)
             return None
         if isinstance(neg, str):
+            # Backfill L1 negative.
+            if _ensure_l1(cfg):
+                _local_negative[user] = True  # type: ignore[index]
             return False
 
     return None
@@ -108,7 +185,19 @@ async def set_cache(
     user_to_pkey: dict[str, Any],
     cfg: dict[str, Any],
 ) -> None:
-    """Pipeline-write user data, aliases, and email mappings to Redis."""
+    """Write user data, aliases, and email mappings to both L1 and L2 (Redis)."""
+    # --- L1 write ---
+    if _ensure_l1(cfg):
+        for k, v in userdata.get("users", {}).items():
+            _local_users[k] = v  # type: ignore[index]
+            for av in v.get("aliases", []):
+                _local_aliases[av] = k  # type: ignore[index]
+            for mv in v.get("mail", []):
+                _local_aliases[mv] = k  # type: ignore[index]
+        for k, v in user_to_pkey.items():
+            _local_aliases[k] = v  # type: ignore[index]
+
+    # --- L2 write ---
     if not is_enabled(cfg):
         return
 
@@ -136,8 +225,17 @@ async def set_cache(
 async def set_negative_cache(
     s: str, neg_users: list[str], cfg: dict[str, Any]
 ) -> None:
-    """Mark a list of users as absent in the negative cache."""
-    if not is_enabled(cfg) or not neg_users:
+    """Mark a list of users as absent in both L1 and L2."""
+    if not neg_users:
+        return
+
+    # --- L1 write ---
+    if _ensure_l1(cfg):
+        for user in neg_users:
+            _local_negative[user] = True  # type: ignore[index]
+
+    # --- L2 write ---
+    if not is_enabled(cfg):
         return
 
     redis_cfg = cfg["xspct_db_redis_cache"]
