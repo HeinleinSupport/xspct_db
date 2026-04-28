@@ -99,6 +99,11 @@ def _prometheus_lines(s_stats: dict[str, Any]) -> str:
         ("xspct_db_redis_hits_total", "redis_hits", "Redis cache hits", "counter"),
         ("xspct_db_redis_misses_total", "redis_misses", "Redis cache misses", "counter"),
         ("xspct_db_redis_negative_hits_total", "redis_negative_hits", "Redis negative cache hits", "counter"),
+        ("xspct_db_foreground_overloaded_total", "foreground_overloaded", "Foreground slot acquire failures", "counter"),
+        ("xspct_db_requests_timeout_total", "requests_timeout", "Requests that exceeded timeout", "counter"),
+        ("xspct_db_background_completed_total", "background_completed", "Background tasks completed", "counter"),
+        ("xspct_db_background_rejected_total", "background_rejected", "Background tasks rejected (no slot)", "counter"),
+        ("xspct_db_background_errors_total", "background_errors", "Background tasks that raised errors", "counter"),
     ):
         lines += [f"# HELP {metric} {help_text}", f"# TYPE {metric} {mtype}"]
         _line(metric, s_stats[stat_key])
@@ -164,30 +169,111 @@ def _log_request(s: str, request: web.Request, body: Any = None) -> None:
     )
 
 
-async def _backend_query(
+# ---------------------------------------------------------------------------
+# Concurrency – foreground / background query queues
+#
+# Every query endpoint runs through _run_with_queues() when
+# xspct_db_request_timeout > 0.  Two asyncio.Semaphore instances are stored
+# on the aiohttp Application object at startup:
+#
+#   app["fg_sem"]   — limits concurrent *foreground* (client-blocking) queries
+#                     (capacity = xspct_db_foreground_slots, default 30)
+#   app["bg_sem"]   — limits concurrent *background* tasks that continue after
+#                     a timeout has been returned to the client
+#                     (capacity = xspct_db_background_slots, default 5)
+#   app["bg_tasks"] — set[asyncio.Task] tracking live background tasks for
+#                     clean shutdown
+#
+# Request lifecycle with queues enabled:
+#   1. Acquire fg_sem (blocks up to *timeout*).  If full → 503.
+#   2. Create task for the backend coroutine.
+#   3. asyncio.wait_for(asyncio.shield(task), timeout).
+#   4a. Success → release fg_sem, return (result, False).
+#   4b. Timeout → try to acquire bg_sem (non-blocking):
+#       • slot free  → release fg_sem, hand task to _finalize_background(),
+#                      return (None, True)  →  caller returns 504.
+#       • no slot    → cancel task, release fg_sem, stats.background_rejected++,
+#                      return (None, True)  →  caller returns 504.
+# ---------------------------------------------------------------------------
+
+
+class _ServiceOverloaded(Exception):
+    """Raised when no foreground semaphore slot is available within the deadline."""
+
+
+async def _finalize_background(
     s: str,
-    user: str,
-    use_redis: bool,
-    users: list[dict[str, Any]],
-    userdata: dict[str, Any],
-    user_to_pkey: dict[str, Any],
-    cfg: dict[str, Any],
-    request_timeout: float,
-) -> tuple[dict[str, Any], dict[str, Any], str | bool]:
-    """Run backend queries with optional per-request timeout."""
-    from xspct_db.backends import run_queries
+    task: asyncio.Task,
+    bg_sem: asyncio.Semaphore,
+    bg_tasks: set[asyncio.Task],
+) -> None:
+    """Await a timed-out query task in background; always release *bg_sem*."""
+    try:
+        await task
+        stats.stats["background_completed"] += 1
+    except asyncio.CancelledError:
+        logger.debug("%s background task cancelled", s)
+    except Exception as exc:
+        stats.stats["background_errors"] += 1
+        logger.exception("%s background task raised: %s", s, exc)
+    finally:
+        bg_sem.release()
+        bg_tasks.discard(asyncio.current_task())
 
-    if request_timeout > 0:
-        task = asyncio.create_task(
-            run_queries(s, user, use_redis, users, userdata, user_to_pkey, cfg)
-        )
-        done, _ = await asyncio.wait({task}, timeout=request_timeout)
-        if not done:
+
+async def _run_with_queues(
+    app: web.Application,
+    s: str,
+    coro: Any,
+    timeout: float,
+) -> tuple[Any, bool]:
+    """Execute *coro* with foreground/background semaphore management.
+
+    Returns ``(result, False)`` when *coro* finishes within *timeout*, or
+    ``(None, True)`` when the foreground deadline expires.  In the latter case
+    the task is promoted to a background slot (or cancelled if no slot is free).
+
+    When *timeout* is ``<= 0`` the coroutine runs directly without semaphores.
+
+    Raises :exc:`_ServiceOverloaded` if no foreground slot can be acquired
+    within the deadline (caller should return 503).
+    """
+    if timeout <= 0:
+        return await coro, False
+
+    fg_sem: asyncio.Semaphore = app["fg_sem"]
+    bg_sem: asyncio.Semaphore = app["bg_sem"]
+    bg_tasks: set[asyncio.Task] = app["bg_tasks"]
+
+    # Acquire a foreground slot (blocking up to *timeout*).
+    try:
+        await asyncio.wait_for(fg_sem.acquire(), timeout=timeout)
+    except asyncio.TimeoutError:
+        stats.stats["foreground_overloaded"] += 1
+        coro.close()
+        raise _ServiceOverloaded
+
+    task = asyncio.create_task(coro)
+    try:
+        result = await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
+        return result, False
+    except asyncio.TimeoutError:
+        stats.stats["requests_timeout"] += 1
+        # Try to promote to background (non-blocking).
+        try:
+            await asyncio.wait_for(bg_sem.acquire(), timeout=0)
+        except asyncio.TimeoutError:
             task.cancel()
-            return userdata, user_to_pkey, "504"
-        return task.result()
-
-    return await run_queries(s, user, use_redis, users, userdata, user_to_pkey, cfg)
+            stats.stats["background_rejected"] += 1
+            return None, True
+        # Hand task to background finalizer.
+        bg_task = asyncio.create_task(
+            _finalize_background(s, task, bg_sem, bg_tasks)
+        )
+        bg_tasks.add(bg_task)
+        return None, True
+    finally:
+        fg_sem.release()
 
 
 def _rspamd_cache_key(rspamd_req: Any, cfg: dict[str, Any]) -> tuple:
@@ -370,12 +456,22 @@ class QueryView(PydanticView):
                 except (ValueError, TypeError):
                     pass
 
-        userdata, user_to_pkey, query_error = await _backend_query(
-            s, user, use_redis, users, userdata, user_to_pkey, cfg, request_timeout
-        )
+        from xspct_db.backends import run_queries
 
-        if query_error == "504":
+        try:
+            result, timed_out = await _run_with_queues(
+                self.request.app, s,
+                run_queries(s, user, use_redis, users, userdata, user_to_pkey, cfg),
+                request_timeout,
+            )
+        except _ServiceOverloaded:
+            return _log_response(s, web.Response(status=503, text="503 Service Overloaded"))
+
+        if timed_out:
             return _log_response(s, web.Response(status=504, text="504 Request Timeout"))
+
+        userdata, user_to_pkey, query_error = result
+
         if isinstance(query_error, str):
             return _log_response(s, web.Response(status=500, text=query_error))
 
@@ -467,20 +563,38 @@ class QueryJsonView(PydanticView):
             "userpart": u.split("@", 1)[0],
             "domain": u.split("@", 1)[-1],
         } for u in query_req.users]
-        userdata: dict[str, Any] = {"users": {}}
-        user_to_pkey: dict[str, Any] = {}
 
-        from xspct_db.backends import run_queries
+        async def _qj_task() -> tuple[bytes, str | bool]:
+            """Run backend queries and cache the response body."""
+            from xspct_db.backends import run_queries
 
-        userdata, user_to_pkey, query_error = await run_queries(
-            s, "", False, users, userdata, user_to_pkey, cfg
-        )
+            userdata: dict[str, Any] = {"users": {}}
+            user_to_pkey: dict[str, Any] = {}
+            userdata, user_to_pkey, query_error = await run_queries(
+                s, "", False, users, userdata, user_to_pkey, cfg
+            )
+            if isinstance(query_error, str):
+                return b"", query_error
+            body = json.dumps(userdata).encode()
+            cache.set_response(response_cache_key, body, cfg)
+            return body, False
+
+        request_timeout = float(cfg.get("xspct_db_request_timeout", 0))
+        try:
+            result, timed_out = await _run_with_queues(
+                self.request.app, s, _qj_task(), request_timeout,
+            )
+        except _ServiceOverloaded:
+            return _log_response(s, web.Response(status=503, text="503 Service Overloaded"))
+
+        if timed_out:
+            return _log_response(s, web.Response(status=504, text="504 Request Timeout"))
+
+        response_body, query_error = result
 
         if isinstance(query_error, str):
             return _log_response(s, web.Response(status=500, text=query_error))
 
-        response_body = json.dumps(userdata).encode()
-        cache.set_response(response_cache_key, response_body, cfg)
         return _log_response(s, web.Response(
             body=response_body,
             content_type="application/json",
@@ -585,32 +699,46 @@ class RspamdSettingsView(PydanticView):
         addresses = list(dict.fromkeys(
             addr for addr in ([rspamd_req.from_addr] + rspamd_req.rcpts) if addr
         ))
-        userdata: dict[str, Any] = {"users": {}}
-        user_to_pkey: dict[str, Any] = {}
 
-        if addresses:
-            from xspct_db.backends import run_queries
-            users = [{
-                "username": addr,
-                "address": addr,
-                "userpart": addr.split("@", 1)[0],
-                "domain": addr.split("@", 1)[-1],
-            } for addr in addresses]
-            userdata, user_to_pkey, _ = await run_queries(
-                s, "", False, users, userdata, user_to_pkey, cfg
+        async def _rs_task() -> bytes:
+            """Run backend queries and build the Rspamd settings response."""
+            userdata: dict[str, Any] = {"users": {}}
+            user_to_pkey: dict[str, Any] = {}
+            if addresses:
+                from xspct_db.backends import run_queries
+                users = [{
+                    "username": addr,
+                    "address": addr,
+                    "userpart": addr.split("@", 1)[0],
+                    "domain": addr.split("@", 1)[-1],
+                } for addr in addresses]
+                userdata, user_to_pkey, _ = await run_queries(
+                    s, "", False, users, userdata, user_to_pkey, cfg
+                )
+            reply = RspamdSettingsResponse(
+                actions={"reject": 15, "greylist": 8, "add header": 13},
+                symbols_disabled=["DKIM_SIGNED"],
+                symbols=["SETTINGS_API_TEST_RESPONSE"],
+                settings_extra_data=_build_settings_extra_data(userdata, cfg),
+                settings_error=[],
             )
+            body = json.dumps(reply.model_dump(exclude_none=True)).encode()
+            cache.set_response(response_cache_key, body, cfg)
+            return body
 
-        reply = RspamdSettingsResponse(
-            actions={"reject": 15, "greylist": 8, "add header": 13},
-            symbols_disabled=["DKIM_SIGNED"],
-            symbols=["SETTINGS_API_TEST_RESPONSE"],
-            settings_extra_data=_build_settings_extra_data(userdata, cfg),
-            settings_error=[],
-        )
-        response_body = json.dumps(reply.model_dump(exclude_none=True)).encode()
-        cache.set_response(response_cache_key, response_body, cfg)
+        request_timeout = float(cfg.get("xspct_db_request_timeout", 0))
+        try:
+            result, timed_out = await _run_with_queues(
+                self.request.app, s, _rs_task(), request_timeout,
+            )
+        except _ServiceOverloaded:
+            return _log_response(s, web.Response(status=503, text="503 Service Overloaded"))
+
+        if timed_out:
+            return _log_response(s, web.Response(status=504, text="504 Request Timeout"))
+
         return _log_response(s, web.Response(
-            body=response_body,
+            body=result,
             content_type="application/json",
             headers={"Connection": "Keep-Alive"},
         ))

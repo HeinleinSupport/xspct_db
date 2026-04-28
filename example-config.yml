@@ -24,6 +24,18 @@ xspct_db_request_timeout: 0
 xspct_db_request_timeout_header: ""
 
 # ---------------------------------------------------------------------------
+# Concurrency — foreground / background query queues
+# Only active when xspct_db_request_timeout > 0.
+#   Foreground slots: maximum concurrent client-blocking queries.
+#     New requests get 503 Service Overloaded when all slots are busy.
+#   Background slots: when a query times out the client receives 504 but the
+#     backend task continues in a background slot to warm the cache.
+#     The task is cancelled if no background slot is free.
+# ---------------------------------------------------------------------------
+xspct_db_foreground_slots: 30
+xspct_db_background_slots: 5
+
+# ---------------------------------------------------------------------------
 # Authentication
 # ---------------------------------------------------------------------------
 xspct_db_api_header: "X-Api-Key"

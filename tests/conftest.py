@@ -33,6 +33,8 @@ def base_cfg() -> dict[str, Any]:
         "xspct_db_rspamd_header": "X-Rspamd-ID",
         "xspct_db_request_timeout": 0,
         "xspct_db_request_timeout_header": "",
+        "xspct_db_foreground_slots": 30,
+        "xspct_db_background_slots": 5,
         "xspct_db_stats_enabled": False,
         "xspct_db_stats_interval": 60,
         "xspct_db_stats_sample_interval": 10,
@@ -156,3 +158,22 @@ async def response_cache_app_client(response_cache_cfg: dict[str, Any], aiohttp_
     client = await aiohttp_client(app)
     yield client
     xcache._response_cache_clear()
+
+
+@pytest.fixture
+def delay_cfg(base_cfg: dict[str, Any]) -> dict[str, Any]:
+    """Config with a delay backend and a short request timeout for queue tests."""
+    cfg = dict(base_cfg)
+    cfg["xspct_db_queries"] = {"slow": {"db_type": "delay", "delay": 1.0}}
+    cfg["xspct_db_request_timeout"] = 0.2
+    cfg["xspct_db_foreground_slots"] = 2
+    cfg["xspct_db_background_slots"] = 1
+    return cfg
+
+
+@pytest.fixture
+async def delay_app_client(delay_cfg: dict[str, Any], aiohttp_client: Any) -> TestClient:
+    """Return an aiohttp test client using the delay backend."""
+    stats.reset()
+    app = create_app(delay_cfg)
+    return await aiohttp_client(app)

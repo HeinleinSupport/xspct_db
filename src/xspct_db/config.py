@@ -31,6 +31,8 @@ DEFAULTS: dict[str, Any] = {
     "xspct_db_rspamd_header": "X-Rspamd-ID",
     "xspct_db_request_timeout": 0,
     "xspct_db_request_timeout_header": "",
+    "xspct_db_foreground_slots": 30,
+    "xspct_db_background_slots": 5,
     "xspct_db_stats_enabled": True,
     "xspct_db_stats_interval": 60,
     "xspct_db_stats_sample_interval": 10,

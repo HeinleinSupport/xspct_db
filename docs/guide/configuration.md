@@ -19,6 +19,8 @@ All keys are optional; unspecified keys fall back to the defaults shown below.
 | `xspct_db_log_prefix` | `"Xspct_DB"` | String prepended to log messages |
 | `xspct_db_request_timeout` | `0` | Per-request timeout in seconds; `0` = disabled |
 | `xspct_db_request_timeout_header` | `""` | Header name to read per-request timeout from |
+| `xspct_db_foreground_slots` | `30` | Maximum concurrent foreground (client-blocking) queries |
+| `xspct_db_background_slots` | `5` | Maximum concurrent background queries after a timeout |
 
 ## Authentication
 
@@ -196,6 +198,30 @@ xspct_db_queries:
 xspct_db_mysql_pool_minconn: 1  # global default
 xspct_db_mysql_pool_maxconn: 20
 ```
+
+## Concurrency
+
+xspct_db uses two `asyncio.Semaphore` instances to limit concurrent backend queries and prevent
+resource exhaustion under load.  The queue system is only active when `xspct_db_request_timeout`
+is greater than `0`.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `xspct_db_foreground_slots` | `30` | Maximum concurrent foreground (client-blocking) queries |
+| `xspct_db_background_slots` | `5` | Maximum concurrent background queries after a timeout |
+
+**Request lifecycle (timeout > 0):**
+
+1. Try to acquire a foreground slot (blocks up to `xspct_db_request_timeout`).
+   If no slot is free within the deadline → **503 Service Overloaded**.
+2. Run the backend query wrapped in `asyncio.shield`.
+3. If the query finishes in time → release the slot and return the normal response.
+4. If the query exceeds the timeout → return **504 Request Timeout** to the client.
+   At the same time, try to acquire a background slot (non-blocking):
+   - Slot free → the query keeps running in the background (populates caches for subsequent requests).
+   - No background slot → the query task is cancelled immediately.
+
+When `xspct_db_request_timeout` is `0` the semaphores are created but never used.
 
 ## Key Translation and Value Splitting
 

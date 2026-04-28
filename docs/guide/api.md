@@ -36,6 +36,11 @@ Authentication is optional and controlled by `xspct_db_metrics_auth`.
 | `xspct_db_redis_hits_total` | counter | Positive Redis cache hits |
 | `xspct_db_redis_misses_total` | counter | Redis cache misses |
 | `xspct_db_redis_negative_hits_total` | counter | Negative cache hits |
+| `xspct_db_foreground_overloaded_total` | counter | Requests rejected because all foreground slots were busy |
+| `xspct_db_requests_timeout_total` | counter | Requests that exceeded the configured timeout |
+| `xspct_db_background_completed_total` | counter | Background tasks that finished successfully |
+| `xspct_db_background_rejected_total` | counter | Background tasks cancelled because no background slot was free |
+| `xspct_db_background_errors_total` | counter | Background tasks that raised an unhandled exception |
 | `xspct_db_query_requests_total{query="…"}` | counter | Queries executed per backend |
 | `xspct_db_query_duration_seconds_total{query="…"}` | counter | Accumulated query time per backend |
 
@@ -77,7 +82,8 @@ The L1 in-process cache is consulted first, then Redis (L2) when enabled, then t
 
 Returns `401 Unauthorized` on bad/missing API key.
 Returns `500` on backend errors.
-Returns `504` when a per-request timeout is exceeded.
+Returns `503 Service Overloaded` when all foreground query slots are busy.
+Returns `504 Request Timeout` when the per-request timeout is exceeded.
 
 ---
 
@@ -118,6 +124,8 @@ Redis (L2) is **not** consulted or populated for batch requests.
 Users not found in any backend are returned with an empty dict.
 Returns `401 Unauthorized` on bad/missing API key.
 Returns `500` on backend errors.
+Returns `503 Service Overloaded` when all foreground query slots are busy.
+Returns `504 Request Timeout` when the per-request timeout is exceeded.
 
 ---
 
@@ -177,3 +185,7 @@ Fields with `null` values (`groups_enabled`, `symbols_enabled`) are omitted from
 `settings_extra_data` contains all users found for the envelope addresses (sender + recipients)
 mapped by primary key, plus a reverse alias map.  It is an empty object when no users are found.
 `settings_error` contains any error messages produced during settings evaluation.
+
+Returns `401 Unauthorized` on bad/missing API key.
+Returns `503 Service Overloaded` when all foreground query slots are busy.
+Returns `504 Request Timeout` when the per-request timeout is exceeded.

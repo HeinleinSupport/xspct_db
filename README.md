@@ -1,10 +1,11 @@
 # xspct_db
 
-A multi-backend database query service with two-layer caching and Rspamd integration.
+A multi-backend database query service with two-layer caching, concurrency control, and Rspamd integration.
 
 Provides an async HTTP API (aiohttp) for querying user data from LDAP, MySQL, and YAML backends,
 with a two-layer object cache (in-process L1 `TTLCache` + optional Redis L2), a response-level
-cache for batch POST endpoints, API-key authentication, Prometheus metrics, and TLS support.
+cache for batch POST endpoints, foreground/background query queues with semaphore-based concurrency
+control, API-key authentication, Prometheus metrics, and TLS support.
 
 ## Installation
 
@@ -73,6 +74,19 @@ xspct_db has three independent cache layers, all using `TTLCache` from `cachetoo
 On a `GET /v1/query/{user}` request, lookups flow: L1 → L2 (Redis) → backend.
 On a `POST` request, the response cache is checked first; on a miss the backend is queried
 and the serialised response is stored for reuse.
+
+## Concurrency
+
+When `xspct_db_request_timeout` is greater than `0`, every query endpoint is guarded by two
+`asyncio.Semaphore` instances:
+
+- **Foreground slots** (`xspct_db_foreground_slots`, default `30`) — limit concurrent
+  client-blocking queries.  When all slots are busy a new request immediately receives
+  **503 Service Overloaded**.
+- **Background slots** (`xspct_db_background_slots`, default `5`) — when a query exceeds the
+  timeout the client receives **504 Request Timeout** but the backend task is promoted to a
+  background slot so it can complete and warm the cache for subsequent requests.  If no
+  background slot is free the task is cancelled.
 
 See [docs/guide/configuration.md](docs/guide/configuration.md) for all options.
 

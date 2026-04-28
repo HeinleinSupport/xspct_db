@@ -59,6 +59,10 @@ Legacy path prefixes (`/query/v1/{user}`, `/query-json/v1`, `/rspamd-settings/v1
   - `xspct_db_local_cache` — L1 in-process `TTLCache` for object lookups (enabled by default)
   - `xspct_db_redis_cache` — L2 Redis cache for object lookups (optional)
   - `xspct_db_response_cache` — L1 `TTLCache` for full JSON response bytes for `POST /v1/query-json` and `POST /v1/rspamd-settings` (enabled by default)
+- **Concurrency config** — two top-level integer keys control the semaphore capacities:
+  - `xspct_db_foreground_slots` (default `30`) — concurrent client-blocking query slots
+  - `xspct_db_background_slots` (default `5`) — concurrent background-continuation slots
+- **Queue app keys** — `app["fg_sem"]`, `app["bg_sem"]`, `app["bg_tasks"]` are created in `server._on_startup()`; do not access them outside `routes.py` helpers.
 
 ## Constraints
 
@@ -67,3 +71,9 @@ Legacy path prefixes (`/query/v1/{user}`, `/query-json/v1`, `/rspamd-settings/v1
 - Do NOT change the response schema of existing HTTP endpoints.
 - Only touch `REUSE.toml` for non-source assets needing explicit annotation.
 - **Test email addresses** must use `@mailexample.de` as the domain. Do not use any other domain in tests.
+- **Queue changes** — when adding or modifying timeout/concurrency behaviour:
+  - Keep `_run_with_queues()` as the single entry point; do not add semaphore logic inline in handlers.
+  - New stats counters must be added to `stats.py` (`stats` dict + `reset()`), the `_prometheus_lines()` table in `routes.py`, and `conftest.base_cfg` (with a safe default value).
+  - Use the `delay` backend (`db_type: delay`, `delay: <seconds>`) to test timeouts; set `xspct_db_request_timeout` below the delay value.
+  - Each query handler must catch `_ServiceOverloaded` → 503 and check `timed_out=True` → 504.
+  - When adding features that run inside the background task, the inner coroutine must include the cache write so background completions warm the cache.

@@ -42,9 +42,9 @@ Entry point is `src/xspct_db/__main__.py` → `server.run()`.
 ### Request flow
 
 1. `routes.py` receives the HTTP request and validates the API key via `auth.py`.
-2. The route handler resolves the backend from `app["config"]` and calls its `lookup()` method.
+2. For query endpoints the handler calls `_run_with_queues()` which manages the foreground/background semaphores when a timeout is configured.
 3. The backend (LDAP / MySQL / YAML / dummy) performs the query and returns a user dict.
-4. `cache.py` optionally wraps the lookup in a Redis cache keyed by username.
+4. `cache.py` optionally wraps the lookup in an in-process L1 cache and a Redis L2 cache keyed by username.
 5. `stats.py` counters are incremented; the response is JSON-serialised and returned.
 
 ### Module overview
@@ -88,6 +88,20 @@ Lookups for `/v1/query/{user}` go through two cache layers before hitting the ba
 
 Both layers are written on a backend miss. L2 hits are backfilled into L1. L1 can operate independently when Redis is not configured.
 
+POST endpoints (`/v1/query-json`, `/v1/rspamd-settings`) use a separate **response cache** (`xspct_db_response_cache`) that caches the full serialised JSON response body. Configured via `xspct_db_response_cache`. Enabled by default.
+
+## Concurrency architecture
+
+All three query endpoints route through `_run_with_queues()` in `routes.py`. Two `asyncio.Semaphore` instances are stored on the `aiohttp.Application` object at startup:
+
+- `app["fg_sem"]` — foreground (client-blocking) slots. Capacity = `xspct_db_foreground_slots` (default 30). Full within timeout → **503**.
+- `app["bg_sem"]` — background slots for tasks that outlive their timeout. Capacity = `xspct_db_background_slots` (default 5). Non-blocking acquire; if full → task cancelled.
+- `app["bg_tasks"]` — `set[asyncio.Task]` tracking live background tasks; cancelled and awaited during shutdown.
+
+The queue is only active when `xspct_db_request_timeout > 0`. With timeout = 0, coroutines are awaited directly (no semaphores).
+
+Background tasks are managed by `_finalize_background()`: always releases `bg_sem` in `finally`, increments `background_completed` or `background_errors` stats, removes itself from `bg_tasks`.
+
 ## Conventions
 
 - **License header** (every source file, lines 1–2):
@@ -104,3 +118,8 @@ Both layers are written on a backend miss. L2 hits are backfilled into L1. L1 ca
 - DO NOT change the `text/plain; version=0.0.4` content-type in `routes.py` — it is protocol-mandated by Rspamd.
 - ONLY touch `REUSE.toml` when adding non-source assets that need explicit annotation.
 - **Test email addresses** must use `@mailexample.de` as the domain. Do not use any other domain in tests.
+- **Queue conventions** — when modifying queue behaviour:
+  - `_run_with_queues()` returns `(result, False)` on success or `(None, True)` on timeout; raises `_ServiceOverloaded` when no fg slot is free.
+  - Callers handle `_ServiceOverloaded` → 503, `timed_out=True` → 504.
+  - New queue-related stats counters belong in `stats.py` `stats` dict and `reset()`, Prometheus lines in `_prometheus_lines()`, and the five new counter entries in conftest `base_cfg`.
+  - When adding new timeout paths, update `tests/test_routes.py` and conftest fixtures; use the `delay` backend (`db_type: delay`) with a `delay` value greater than `xspct_db_request_timeout`.

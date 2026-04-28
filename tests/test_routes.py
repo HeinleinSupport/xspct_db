@@ -196,3 +196,69 @@ async def test_rspamd_settings_response_cache_hit(response_cache_app_client):
     assert resp2.status == 200
     assert xstats.stats["response_cache_hits"] == 1
     assert json.loads(await resp1.text()) == json.loads(await resp2.text())
+
+
+# ---------------------------------------------------------------------------
+# Queue / timeout behaviour
+# ---------------------------------------------------------------------------
+
+async def test_query_returns_504_on_timeout(delay_app_client):
+    """GET /v1/query/{user} returns 504 when the backend exceeds the timeout."""
+    from xspct_db import stats as xstats
+    headers = {"X-Api-Key": "test-key"}
+    resp = await delay_app_client.get("/v1/query/user@mailexample.de", headers=headers)
+    assert resp.status == 504
+    assert xstats.stats["requests_timeout"] == 1
+
+
+async def test_query_json_returns_504_on_timeout(delay_app_client):
+    """POST /v1/query-json returns 504 when the backend exceeds the timeout."""
+    from xspct_db import stats as xstats
+    payload = json.dumps({"users": ["user@mailexample.de"]})
+    headers = {"Content-Type": "application/json", "X-Api-Key": "test-key"}
+    resp = await delay_app_client.post("/v1/query-json", data=payload, headers=headers)
+    assert resp.status == 504
+    assert xstats.stats["requests_timeout"] >= 1
+
+
+async def test_rspamd_settings_returns_504_on_timeout(delay_app_client):
+    """POST /v1/rspamd-settings returns 504 when the backend exceeds the timeout."""
+    from xspct_db import stats as xstats
+    payload = json.dumps({"from": "user@mailexample.de", "rcpts": ["bob@mailexample.de"]})
+    headers = {"Content-Type": "application/json", "X-Api-Key": "test-key"}
+    resp = await delay_app_client.post("/v1/rspamd-settings", data=payload, headers=headers)
+    assert resp.status == 504
+    assert xstats.stats["requests_timeout"] >= 1
+
+
+async def test_foreground_overload_returns_503(delay_app_client):
+    """When all foreground slots are busy, new requests get 503."""
+    import asyncio
+    from xspct_db import stats as xstats
+    headers = {"X-Api-Key": "test-key"}
+    # Saturate the 2 fg slots + 1 bg slot, then the 4th should get 503
+    tasks = [
+        asyncio.ensure_future(delay_app_client.get("/v1/query/u1@mailexample.de", headers=headers))
+        for _ in range(4)
+    ]
+    results = await asyncio.gather(*tasks)
+    statuses = sorted(r.status for r in results)
+    # At least one 503 expected
+    assert 503 in statuses
+    assert xstats.stats["foreground_overloaded"] >= 1
+
+
+async def test_prometheus_includes_queue_metrics(app_client):
+    """GET /metrics includes the five queue-related counter lines."""
+    from xspct_db import stats as xstats
+    xstats.reset()
+    resp = await app_client.get("/metrics")
+    body = await resp.text()
+    for metric in (
+        "xspct_db_foreground_overloaded_total",
+        "xspct_db_requests_timeout_total",
+        "xspct_db_background_completed_total",
+        "xspct_db_background_rejected_total",
+        "xspct_db_background_errors_total",
+    ):
+        assert metric in body, f"{metric} missing from /metrics output"

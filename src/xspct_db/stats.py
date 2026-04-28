@@ -26,6 +26,11 @@ stats: dict[str, Any] = {
     "redis_hits": 0,
     "redis_misses": 0,
     "redis_negative_hits": 0,
+    "foreground_overloaded": 0,
+    "requests_timeout": 0,
+    "background_completed": 0,
+    "background_rejected": 0,
+    "background_errors": 0,
     # per-query timing: {qk: {count, time_total, time_min, time_max}}
     "queries": {},
     # per-pool connection samples: {pool_key: {min, max, sum, count, limit}}
@@ -45,6 +50,11 @@ def reset() -> None:
     stats["redis_hits"] = 0
     stats["redis_misses"] = 0
     stats["redis_negative_hits"] = 0
+    stats["foreground_overloaded"] = 0
+    stats["requests_timeout"] = 0
+    stats["background_completed"] = 0
+    stats["background_rejected"] = 0
+    stats["background_errors"] = 0
     stats["queries"].clear()
     stats["pool_connections"].clear()
 

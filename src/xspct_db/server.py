@@ -60,9 +60,21 @@ async def _on_startup(app: web.Application) -> None:
 
     asyncio.create_task(stats.log_stats_periodically(cfg))
 
+    # Foreground / background query semaphores
+    app["fg_sem"] = asyncio.Semaphore(int(cfg.get("xspct_db_foreground_slots", 30)))
+    app["bg_sem"] = asyncio.Semaphore(int(cfg.get("xspct_db_background_slots", 5)))
+    app["bg_tasks"]: set[asyncio.Task] = set()
+
 
 async def _on_shutdown(app: web.Application) -> None:
     cfg: dict[str, Any] = app["config"]
+
+    # Cancel outstanding background query tasks.
+    bg_tasks: set[asyncio.Task] = app.get("bg_tasks", set())
+    for task in bg_tasks:
+        task.cancel()
+    if bg_tasks:
+        await asyncio.gather(*bg_tasks, return_exceptions=True)
 
     if cfg.get("xspct_db_types_enabled", {}).get("ldap"):
         from xspct_db.backends.ldap_backend import close_pools as close_ldap_pools
