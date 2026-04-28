@@ -54,7 +54,7 @@ Entry point is `src/xspct_db/__main__.py` → `server.run()`.
 | `server.py` | `create_app()` factory, startup/shutdown hooks, `run()` |
 | `routes.py` | aiohttp route definitions and HTTP handlers |
 | `auth.py` | API key validation (`X-Api-Key` header) |
-| `cache.py` | Redis cache layer; `set_connection()` + `get()` / `set()` |
+| `cache.py` | Two-layer cache: L1 in-process `TTLCache` + L2 Redis; `set_connection()` + `get_object()` / `set_cache()` / `set_negative_cache()` |
 | `config.py` | YAML config loading with defaults |
 | `schemas.py` | Pydantic request/response models for aiohttp-pydantic |
 | `stats.py` | Prometheus-style counters; periodic log output |
@@ -78,6 +78,15 @@ Entry point is `src/xspct_db/__main__.py` → `server.run()`.
 | POST | `/v1/rspamd-settings` | required | Rspamd settings blob |
 
 Legacy path prefixes (`/query/v1/{user}`, `/query-json/v1`, `/rspamd-settings/v1`) are also registered for backwards compatibility.
+
+## Cache architecture
+
+Lookups for `/v1/query/{user}` go through two cache layers before hitting the backend:
+
+1. **L1** — `cachetools.TTLCache` (in-process, zero-latency). Configured via `xspct_db_local_cache`. Enabled by default.
+2. **L2** — Redis (`redis.asyncio`). Configured via `xspct_db_redis_cache`. Optional (`enabled: false` by default).
+
+Both layers are written on a backend miss. L2 hits are backfilled into L1. L1 can operate independently when Redis is not configured.
 
 ## Conventions
 

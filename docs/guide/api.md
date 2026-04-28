@@ -29,6 +29,8 @@ Authentication is optional and controlled by `xspct_db_metrics_auth`.
 | `xspct_db_requests_total` | counter | All incoming requests |
 | `xspct_db_requests_known_total` | counter | Requests where the user was found |
 | `xspct_db_requests_unknown_total` | counter | Requests where the user was not found |
+| `xspct_db_local_cache_hits_total` | counter | L1 in-process cache hits |
+| `xspct_db_local_cache_misses_total` | counter | L1 in-process cache misses |
 | `xspct_db_redis_hits_total` | counter | Positive Redis cache hits |
 | `xspct_db_redis_misses_total` | counter | Redis cache misses |
 | `xspct_db_redis_negative_hits_total` | counter | Negative cache hits |
@@ -45,7 +47,7 @@ The canonical path prefix is `/v1/`; legacy paths (`/query/v1/{user}`,
 ### `GET /v1/query/{user}`
 
 Look up a single user across all configured query backends.
-Redis cache is consulted first when enabled.
+The L1 in-process cache is consulted first, then Redis (L2) when enabled, then the backend.
 
 **Authentication:** `X-Api-Key` header (or the configured header name)
 

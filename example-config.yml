@@ -1,0 +1,172 @@
+# SPDX-License-Identifier: EUPL-1.2
+# SPDX-FileCopyrightText: 2026 Carsten Rosenberg <c.rosenberg@heinlein-support.de>
+#
+# xspct_db — example configuration file
+# All keys are optional; unset keys fall back to the defaults shown here.
+# Start the daemon with:  xspct-db /etc/xspct-db.yml
+
+# ---------------------------------------------------------------------------
+# Server
+# ---------------------------------------------------------------------------
+xspct_db_listen_address:
+  - "127.0.0.1"
+  - "::1"
+xspct_db_listen_port: "11350"
+xspct_db_listen_backlog: 256
+
+# Python log level: 10=DEBUG, 20=INFO, 30=WARNING, 40=ERROR, 50=CRITICAL
+xspct_db_log_level: 20
+xspct_db_log_prefix: "Xspct_DB"
+
+# Per-request timeout in seconds; 0 = disabled
+xspct_db_request_timeout: 0
+# Read a per-request timeout from this header (leave empty to disable)
+xspct_db_request_timeout_header: ""
+
+# ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+xspct_db_api_header: "X-Api-Key"
+xspct_db_api_key: "changeme"          # accepts a single key or a list of keys
+xspct_db_api_key_verify_fail: true    # return 403 on bad key; false = allow through
+xspct_db_rspamd_header: "X-Rspamd-ID"
+
+# ---------------------------------------------------------------------------
+# TLS
+# ---------------------------------------------------------------------------
+xspct_db_tls:
+  tls_enabled: false
+  tls_cert: /etc/ssl/certs/xspct-db.crt
+  tls_key: /etc/ssl/private/xspct-db.key
+
+# ---------------------------------------------------------------------------
+# Metrics (/metrics endpoint)
+# ---------------------------------------------------------------------------
+xspct_db_metrics_auth:
+  enabled: false            # require authentication on /metrics
+  api_key: true             # accept the API key as bearer token
+  basic_auth_users:         # optional HTTP Basic Auth users (plain-text passwords)
+    monitor: secret
+
+# ---------------------------------------------------------------------------
+# Statistics (periodic log lines)
+# ---------------------------------------------------------------------------
+xspct_db_stats_enabled: true
+xspct_db_stats_interval: 60         # seconds between stats log lines
+xspct_db_stats_sample_interval: 10  # pool connection sampling interval (seconds)
+
+# ---------------------------------------------------------------------------
+# L1 cache — in-process TTLCache (always available, zero latency)
+# Sits in front of Redis and is enabled by default.
+# ---------------------------------------------------------------------------
+xspct_db_local_cache:
+  enabled: true
+  expire: 20           # TTL for positive entries (seconds)
+  expire_negative: 20  # TTL for negative (not-found) entries (seconds)
+  max_entries: 10000   # maximum entries per cache bucket
+
+# ---------------------------------------------------------------------------
+# L2 cache — Redis (optional)
+# Install the redis extra:  pip install "xspct_db[redis]"
+# ---------------------------------------------------------------------------
+xspct_db_redis_cache:
+  enabled: false
+  host: localhost
+  port: 6379
+  user: ""
+  password: ""
+  decode_responses: true
+  prefix_user: "xspct_db_user_"
+  prefix_alias: "xspct_db_alias_"
+  prefix_negative_alias: "xspct_db_neg_alias_"
+  expire: 60           # TTL for positive entries (seconds)
+  expire_negative: 60  # TTL for negative entries (seconds)
+  connect_timeout: 1
+  query_timeout: 1
+  max_connections: 40
+  max_errors: 2        # trip circuit-breaker after this many consecutive errors
+
+# ---------------------------------------------------------------------------
+# Queries — one entry per named backend
+# ---------------------------------------------------------------------------
+xspct_db_queries:
+
+  # ── YAML backend (static data from xspct_db_yaml_data below) ──────────────
+  users_yaml:
+    db_type: yaml
+    primary_key: mail
+    attr_list: ["*"]
+    search_filter: [mail, aliases]
+
+  # ── LDAP backend ────────────────────────────────────────────────────────────
+  # Requires:  pip install "xspct_db[ldap]"
+  #users_ldap:
+  #  db_type: ldap
+  #  server: ldap://ldap.example.com
+  #  use_tls: false
+  #  verify_certs: true
+  #  ca_cert_dir: /etc/ssl/certs
+  #  bind_dn: cn=reader,dc=example,dc=com
+  #  bind_dn_pw: secret
+  #  base_dn: ou=users,dc=example,dc=com
+  #  search_filter: "(mail={MAIL})"
+  #  search_filter_replace:
+  #    "{MAIL}": username
+  #  primary_key: mail
+  #  attr_list: [mail, uid, cn, mailLocalAddress]
+  #  pool_minconn: 2
+  #  pool_maxconn: 20
+
+  # ── MySQL backend ────────────────────────────────────────────────────────────
+  # Requires:  pip install "xspct_db[mysql]"
+  #users_mysql:
+  #  db_type: mysql
+  #  host: 127.0.0.1
+  #  port: 3306
+  #  user: xspct
+  #  password: secret
+  #  db: maildb
+  #  query: "SELECT mail, uid, aliases FROM users WHERE mail = %s OR aliases LIKE %s"
+  #  primary_key: mail
+  #  attr_list: [mail, uid, aliases]
+  #  pool_minconn: 1
+  #  pool_maxconn: 20
+
+# LDAP / MySQL global pool size defaults (can be overridden per-query above)
+xspct_db_ldap_pool_minconn: 2
+xspct_db_ldap_pool_maxconn: 20
+xspct_db_mysql_pool_minconn: 1
+xspct_db_mysql_pool_maxconn: 20
+
+# ---------------------------------------------------------------------------
+# Static YAML data (used by the yaml backend)
+# ---------------------------------------------------------------------------
+xspct_db_yaml_data:
+  users_yaml:
+    alice@example.com:
+      mail: alice@example.com
+      uid: alice
+      aliases:
+        - a.smith@example.com
+    bob@example.com:
+      mail: bob@example.com
+      uid: bob
+
+# ---------------------------------------------------------------------------
+# Key translation — rename attribute keys in every backend response
+# ---------------------------------------------------------------------------
+xspct_db_key_translation:
+  cn: displayname
+
+# ---------------------------------------------------------------------------
+# Value splitting — split string values on a delimiter
+# ---------------------------------------------------------------------------
+xspct_db_value_split:
+  aliases: ","
+
+# ---------------------------------------------------------------------------
+# Rspamd integration
+# Fields treated as alias lists when building the rspamd-settings response
+# ---------------------------------------------------------------------------
+xspct_db_rspamd_alias_fields:
+  - aliases

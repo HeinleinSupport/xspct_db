@@ -56,6 +56,28 @@ xspct_db_metrics_auth:
 | `xspct_db_stats_interval` | `60` | Interval between stats log lines (seconds) |
 | `xspct_db_stats_sample_interval` | `10` | Pool connection sampling interval (seconds) |
 
+## Local (L1) Cache
+
+xspct_db maintains an in-process `TTLCache` (provided by `cachetools`) that sits in front of
+Redis and serves as a zero-latency first layer.  It is **enabled by default** and works even
+when Redis is not configured.
+
+```yaml
+xspct_db_local_cache:
+  enabled: true        # set to false to disable the L1 cache entirely
+  expire: 20           # TTL for positive cache entries (seconds)
+  expire_negative: 20  # TTL for negative (not-found) entries (seconds)
+  max_entries: 10000   # maximum number of entries across each cache bucket
+```
+
+When both L1 and Redis (L2) are enabled, a lookup follows this order:
+
+1. Check L1 — return immediately on hit (no network I/O).
+2. Check Redis (L2) — on hit, backfill L1 and return.
+3. Query the backend — write result to both L1 and L2.
+
+Disabling L1 (`enabled: false`) falls through directly to Redis or the backend on every request.
+
 ## Redis Cache
 
 ```yaml

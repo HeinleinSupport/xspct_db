@@ -1,9 +1,10 @@
 # xspct_db
 
-A multi-backend database query service with Redis caching and Rspamd integration.
+A multi-backend database query service with two-layer caching and Rspamd integration.
 
 Provides an async HTTP API (aiohttp) for querying user data from LDAP, MySQL, and YAML backends,
-with Redis caching, API-key authentication, Prometheus metrics, and TLS support.
+with an in-process L1 `TTLCache` and optional Redis (L2) caching, API-key authentication,
+Prometheus metrics, and TLS support.
 
 ## Installation
 
@@ -28,7 +29,8 @@ xspct-db /etc/xspct-db.yml
 python -m xspct_db /etc/xspct-db.yml
 ```
 
-Configuration is a single YAML file. All keys are optional; see
+Configuration is a single YAML file. An annotated example is provided in
+[example-config.yml](example-config.yml); see
 [docs/guide/configuration.md](docs/guide/configuration.md) for the full reference.
 
 ## HTTP API

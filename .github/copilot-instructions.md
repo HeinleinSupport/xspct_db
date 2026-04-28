@@ -9,7 +9,7 @@ src/xspct_db/          # Main package
   __init__.py          # Package version (__version__)
   __main__.py          # Entry point → server.run()
   auth.py              # API key authentication
-  cache.py             # Redis cache layer
+  cache.py             # Two-layer cache (L1 TTLCache + L2 Redis)
   config.py            # YAML configuration loading
   routes.py            # aiohttp route definitions and handlers
   schemas.py           # Pydantic request/response models
@@ -55,6 +55,7 @@ Legacy path prefixes (`/query/v1/{user}`, `/query-json/v1`, `/rspamd-settings/v1
 - **Async first** — all I/O uses `async`/`await`; tests use `pytest-asyncio` with `asyncio_mode = "auto"`.
 - **New backends** subclass `backends.base.BaseBackend`; use `dummy.py` as the minimal skeleton.
 - **Rspamd protocol** — the `text/plain; version=0.0.4` content-type in `routes.py` is protocol-mandated; do not change it.
+- **Cache config** — L1 (in-process `TTLCache`) is configured under `xspct_db_local_cache`; L2 (Redis) is configured under `xspct_db_redis_cache`. Do not mix keys between these dicts.
 
 ## Constraints
 
