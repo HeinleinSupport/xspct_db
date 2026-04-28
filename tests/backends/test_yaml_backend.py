@@ -27,10 +27,10 @@ def _cfg(yaml_data: dict[str, Any] | None = None) -> dict[str, Any]:
         "xspct_db_yaml_data": {
             "users": yaml_data
             or {
-                "alice@example.com": {
-                    "mail": "alice@example.com",
+                "alice@mailexample.de": {
+                    "mail": "alice@mailexample.de",
                     "uid": "alice",
-                    "aliases": ["a@example.com"],
+                    "aliases": ["a@mailexample.de"],
                 },
             }
         },
@@ -38,28 +38,28 @@ def _cfg(yaml_data: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 async def test_yaml_known_user():
-    users = [{"username": "alice@example.com"}]
+    users = [{"username": "alice@mailexample.de"}]
     ud, pkey, err = await query("s", "users", users, {"users": {}}, {}, _cfg())
     assert err is False
     assert len(ud["users"]) == 1
 
 
 async def test_yaml_unknown_user_returns_empty():
-    users = [{"username": "nobody@example.com"}]
+    users = [{"username": "nobody@mailexample.de"}]
     ud, pkey, err = await query("s", "users", users, {"users": {}}, {}, _cfg())
     assert err is False
     assert ud["users"] == {}
 
 
 async def test_yaml_alias_lookup():
-    users = [{"username": "a@example.com"}]
+    users = [{"username": "a@mailexample.de"}]
     ud, pkey, err = await query("s", "users", users, {"users": {}}, {}, _cfg())
     assert err is False
     assert len(ud["users"]) == 1
 
 
 async def test_yaml_invalid_query_name():
-    users = [{"username": "alice@example.com"}]
+    users = [{"username": "alice@mailexample.de"}]
     _, _, err = await query("s", "nonexistent", users, {"users": {}}, {}, _cfg())
     assert isinstance(err, str) and err.startswith("500")
 
@@ -68,7 +68,7 @@ async def test_yaml_missing_yaml_root_returns_empty():
     """Missing yaml_root key returns empty results without error."""
     cfg = _cfg()
     cfg["xspct_db_yaml_data"] = {}  # data missing entirely
-    users = [{"username": "alice@example.com"}]
+    users = [{"username": "alice@mailexample.de"}]
     ud, _, err = await query("s", "users", users, {"users": {}}, {}, cfg)
     assert err is False
     assert ud["users"] == {}

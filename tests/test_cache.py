@@ -118,29 +118,29 @@ def test_reset_errors_noop_when_zero(redis_cfg):
 # ---------------------------------------------------------------------------
 
 async def test_get_object_returns_none_when_disabled(disabled_cfg):
-    result = await cache.get_object("s", "user@example.com", disabled_cfg)
+    result = await cache.get_object("s", "user@mailexample.de", disabled_cfg)
     assert result is None
 
 
 async def test_get_object_cache_miss(fake_redis, redis_cfg):
-    result = await cache.get_object("s", "nobody@example.com", redis_cfg)
+    result = await cache.get_object("s", "nobody@mailexample.de", redis_cfg)
     assert result is None
 
 
 async def test_get_object_alias_hit(fake_redis, redis_cfg):
     """Returns the user dict when alias → user key → object are cached."""
-    await fake_redis.set("xspct_db_alias_alice@example.com", "alice@example.com")
-    await fake_redis.set("xspct_db_user_alice@example.com", '{"mail": ["alice@example.com"], "uid": ["alice"]}')
+    await fake_redis.set("xspct_db_alias_alice@mailexample.de", "alice@mailexample.de")
+    await fake_redis.set("xspct_db_user_alice@mailexample.de", '{"mail": ["alice@mailexample.de"], "uid": ["alice"]}')
 
-    result = await cache.get_object("s", "alice@example.com", redis_cfg)
-    assert result == {"mail": ["alice@example.com"], "uid": ["alice"]}
+    result = await cache.get_object("s", "alice@mailexample.de", redis_cfg)
+    assert result == {"mail": ["alice@mailexample.de"], "uid": ["alice"]}
 
 
 async def test_get_object_negative_cache_hit(fake_redis, redis_cfg):
     """Returns False when the user is in the negative cache."""
-    await fake_redis.set("xspct_db_neg_ghost@example.com", "1")
+    await fake_redis.set("xspct_db_neg_ghost@mailexample.de", "1")
 
-    result = await cache.get_object("s", "ghost@example.com", redis_cfg)
+    result = await cache.get_object("s", "ghost@mailexample.de", redis_cfg)
     assert result is False
 
 
@@ -151,19 +151,19 @@ async def test_get_object_negative_cache_hit(fake_redis, redis_cfg):
 async def test_set_cache_stores_user_and_aliases(fake_redis, redis_cfg):
     userdata = {
         "users": {
-            "alice@example.com": {
-                "mail": ["alice@example.com"],
+            "alice@mailexample.de": {
+                "mail": ["alice@mailexample.de"],
                 "uid": ["alice"],
-                "aliases": ["a@example.com"],
+                "aliases": ["a@mailexample.de"],
             }
         }
     }
-    user_to_pkey = {"alice@example.com": "alice@example.com"}
+    user_to_pkey = {"alice@mailexample.de": "alice@mailexample.de"}
     await cache.set_cache("s", userdata, user_to_pkey, redis_cfg)
 
-    assert await fake_redis.get("xspct_db_user_alice@example.com") is not None
-    assert await fake_redis.get("xspct_db_alias_a@example.com") == "alice@example.com"
-    assert await fake_redis.get("xspct_db_alias_alice@example.com") == "alice@example.com"
+    assert await fake_redis.get("xspct_db_user_alice@mailexample.de") is not None
+    assert await fake_redis.get("xspct_db_alias_a@mailexample.de") == "alice@mailexample.de"
+    assert await fake_redis.get("xspct_db_alias_alice@mailexample.de") == "alice@mailexample.de"
 
 
 async def test_set_cache_noop_when_disabled(disabled_cfg):
@@ -177,10 +177,10 @@ async def test_set_cache_noop_when_disabled(disabled_cfg):
 # ---------------------------------------------------------------------------
 
 async def test_set_negative_cache_marks_absent_users(fake_redis, redis_cfg):
-    await cache.set_negative_cache("s", ["ghost@example.com", "void@example.com"], redis_cfg)
+    await cache.set_negative_cache("s", ["ghost@mailexample.de", "void@mailexample.de"], redis_cfg)
 
-    assert await fake_redis.get("xspct_db_neg_ghost@example.com") == "1"
-    assert await fake_redis.get("xspct_db_neg_void@example.com") == "1"
+    assert await fake_redis.get("xspct_db_neg_ghost@mailexample.de") == "1"
+    assert await fake_redis.get("xspct_db_neg_void@mailexample.de") == "1"
 
 
 async def test_set_negative_cache_noop_for_empty_list(fake_redis, redis_cfg):
@@ -191,7 +191,7 @@ async def test_set_negative_cache_noop_for_empty_list(fake_redis, redis_cfg):
 
 
 async def test_set_negative_cache_noop_when_disabled(disabled_cfg):
-    await cache.set_negative_cache("s", ["u@example.com"], disabled_cfg)
+    await cache.set_negative_cache("s", ["u@mailexample.de"], disabled_cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -222,10 +222,10 @@ def local_only_cfg() -> dict[str, Any]:
 async def test_local_cache_hit_bypasses_redis(redis_cfg):
     """L1 hit returns the user object without any Redis I/O."""
     cache._init_local_caches(redis_cfg)
-    cache._local_users["alice@example.com"] = {"uid": ["alice"]}
-    cache._local_aliases["alice@example.com"] = "alice@example.com"
+    cache._local_users["alice@mailexample.de"] = {"uid": ["alice"]}
+    cache._local_aliases["alice@mailexample.de"] = "alice@mailexample.de"
 
-    result = await cache.get_object("s", "alice@example.com", redis_cfg)
+    result = await cache.get_object("s", "alice@mailexample.de", redis_cfg)
     assert result == {"uid": ["alice"]}
     # No Redis connection was needed.
     assert cache.connection is None
@@ -234,106 +234,106 @@ async def test_local_cache_hit_bypasses_redis(redis_cfg):
 async def test_local_cache_negative_hit_bypasses_redis(redis_cfg):
     """L1 negative hit returns False without any Redis I/O."""
     cache._init_local_caches(redis_cfg)
-    cache._local_negative["ghost@example.com"] = True
+    cache._local_negative["ghost@mailexample.de"] = True
 
-    result = await cache.get_object("s", "ghost@example.com", redis_cfg)
+    result = await cache.get_object("s", "ghost@mailexample.de", redis_cfg)
     assert result is False
     assert cache.connection is None
 
 
 async def test_local_cache_miss_falls_through_to_redis(fake_redis, redis_cfg):
     """L1 miss → L2 hit backfills L1 and returns the user object."""
-    await fake_redis.set("xspct_db_alias_alice@example.com", "alice@example.com")
+    await fake_redis.set("xspct_db_alias_alice@mailexample.de", "alice@mailexample.de")
     await fake_redis.set(
-        "xspct_db_user_alice@example.com",
-        '{"uid": ["alice"], "mail": ["alice@example.com"]}',
+        "xspct_db_user_alice@mailexample.de",
+        '{"uid": ["alice"], "mail": ["alice@mailexample.de"]}',
     )
 
-    result = await cache.get_object("s", "alice@example.com", redis_cfg)
-    assert result == {"uid": ["alice"], "mail": ["alice@example.com"]}
+    result = await cache.get_object("s", "alice@mailexample.de", redis_cfg)
+    assert result == {"uid": ["alice"], "mail": ["alice@mailexample.de"]}
 
     # L1 must have been backfilled.
     assert cache._local_aliases is not None
-    assert cache._local_aliases.get("alice@example.com") == "alice@example.com"
+    assert cache._local_aliases.get("alice@mailexample.de") == "alice@mailexample.de"
     assert cache._local_users is not None
-    assert cache._local_users.get("alice@example.com") is not None
+    assert cache._local_users.get("alice@mailexample.de") is not None
 
 
 async def test_local_cache_negative_miss_falls_through_to_redis(fake_redis, redis_cfg):
     """L1 negative miss → L2 negative hit backfills L1 and returns False."""
-    await fake_redis.set("xspct_db_neg_ghost@example.com", "1")
+    await fake_redis.set("xspct_db_neg_ghost@mailexample.de", "1")
 
-    result = await cache.get_object("s", "ghost@example.com", redis_cfg)
+    result = await cache.get_object("s", "ghost@mailexample.de", redis_cfg)
     assert result is False
 
     assert cache._local_negative is not None
-    assert "ghost@example.com" in cache._local_negative
+    assert "ghost@mailexample.de" in cache._local_negative
 
 
 async def test_set_cache_populates_l1_and_redis(fake_redis, redis_cfg):
     """set_cache() writes to both L1 and Redis."""
     userdata = {
         "users": {
-            "alice@example.com": {
+            "alice@mailexample.de": {
                 "uid": ["alice"],
-                "mail": ["alice@example.com"],
-                "aliases": ["a@example.com"],
+                "mail": ["alice@mailexample.de"],
+                "aliases": ["a@mailexample.de"],
             }
         }
     }
-    user_to_pkey = {"alice@example.com": "alice@example.com"}
+    user_to_pkey = {"alice@mailexample.de": "alice@mailexample.de"}
     await cache.set_cache("s", userdata, user_to_pkey, redis_cfg)
 
     # L2 (Redis)
-    assert await fake_redis.get("xspct_db_user_alice@example.com") is not None
-    assert await fake_redis.get("xspct_db_alias_a@example.com") == "alice@example.com"
+    assert await fake_redis.get("xspct_db_user_alice@mailexample.de") is not None
+    assert await fake_redis.get("xspct_db_alias_a@mailexample.de") == "alice@mailexample.de"
 
     # L1
     assert cache._local_users is not None
-    assert cache._local_users.get("alice@example.com") is not None
+    assert cache._local_users.get("alice@mailexample.de") is not None
     assert cache._local_aliases is not None
-    assert cache._local_aliases.get("a@example.com") == "alice@example.com"
-    assert cache._local_aliases.get("alice@example.com") == "alice@example.com"
+    assert cache._local_aliases.get("a@mailexample.de") == "alice@mailexample.de"
+    assert cache._local_aliases.get("alice@mailexample.de") == "alice@mailexample.de"
 
 
 async def test_set_negative_cache_populates_l1_and_redis(fake_redis, redis_cfg):
     """set_negative_cache() writes to both L1 and Redis."""
-    await cache.set_negative_cache("s", ["ghost@example.com"], redis_cfg)
+    await cache.set_negative_cache("s", ["ghost@mailexample.de"], redis_cfg)
 
-    assert await fake_redis.get("xspct_db_neg_ghost@example.com") == "1"
+    assert await fake_redis.get("xspct_db_neg_ghost@mailexample.de") == "1"
     assert cache._local_negative is not None
-    assert "ghost@example.com" in cache._local_negative
+    assert "ghost@mailexample.de" in cache._local_negative
 
 
 async def test_local_cache_works_without_redis(local_only_cfg):
     """L1 serves hits and stores misses when Redis is disabled (connection is None)."""
     userdata = {
         "users": {
-            "bob@example.com": {
+            "bob@mailexample.de": {
                 "uid": ["bob"],
-                "mail": ["bob@example.com"],
+                "mail": ["bob@mailexample.de"],
                 "aliases": [],
             }
         }
     }
-    user_to_pkey = {"bob@example.com": "bob@example.com"}
+    user_to_pkey = {"bob@mailexample.de": "bob@mailexample.de"}
 
     await cache.set_cache("s", userdata, user_to_pkey, local_only_cfg)
 
-    result = await cache.get_object("s", "bob@example.com", local_only_cfg)
-    assert result == {"uid": ["bob"], "mail": ["bob@example.com"], "aliases": []}
+    result = await cache.get_object("s", "bob@mailexample.de", local_only_cfg)
+    assert result == {"uid": ["bob"], "mail": ["bob@mailexample.de"], "aliases": []}
     assert cache.connection is None
 
 
 async def test_local_cache_negative_without_redis(local_only_cfg):
     """set_negative_cache() writes to L1 and get_object() reads from L1 without Redis."""
-    await cache.set_negative_cache("s", ["nobody@example.com"], local_only_cfg)
-    result = await cache.get_object("s", "nobody@example.com", local_only_cfg)
+    await cache.set_negative_cache("s", ["nobody@mailexample.de"], local_only_cfg)
+    result = await cache.get_object("s", "nobody@mailexample.de", local_only_cfg)
     assert result is False
     assert cache.connection is None
 
 
 async def test_local_cache_disabled_falls_through(disabled_cfg):
     """When L1 is explicitly disabled and Redis is disabled, get_object() returns None."""
-    result = await cache.get_object("s", "alice@example.com", disabled_cfg)
+    result = await cache.get_object("s", "alice@mailexample.de", disabled_cfg)
     assert result is None

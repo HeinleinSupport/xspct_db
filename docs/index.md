@@ -15,7 +15,7 @@ Query a user:
 
 ```bash
 curl -s -H "X-Api-Key: your-key" \
-  http://localhost:11350/query/v1/user@example.com | python3 -m json.tool
+  http://localhost:11350/query/v1/user@mailexample.de | python3 -m json.tool
 ```
 
 ```{toctree}

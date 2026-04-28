@@ -38,8 +38,8 @@ MYSQL_CFG: dict[str, Any] = {
     "xspct_db_mysql_pool_maxconn": 5,
 }
 
-_USER_A = {"username": "alice@example.com", "address": "alice@example.com", "userpart": "alice", "domain": "example.com"}
-_USER_B = {"username": "bob@example.com", "address": "bob@example.com", "userpart": "bob", "domain": "example.com"}
+_USER_A = {"username": "alice@mailexample.de", "address": "alice@mailexample.de", "userpart": "alice", "domain": "mailexample.de"}
+_USER_B = {"username": "bob@mailexample.de", "address": "bob@mailexample.de", "userpart": "bob", "domain": "mailexample.de"}
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +152,7 @@ async def test_query_mysql_error_returns_500():
 async def test_query_single_user_merges_result():
     """Single user: execute called once, result merged, user_to_pkey set."""
     aiomysql_mock = _make_aiomysql_mock()
-    pool, cursor = _make_pool([{"uid": "alice@example.com", "mail": "alice@example.com"}])
+    pool, cursor = _make_pool([{"uid": "alice@mailexample.de", "mail": "alice@mailexample.de"}])
     mysql_backend._pools["mysql_users"] = pool
 
     with pytest.MonkeyPatch().context() as mp:
@@ -161,14 +161,14 @@ async def test_query_single_user_merges_result():
 
     assert error is False
     cursor.execute.assert_called_once()
-    assert "alice@example.com" in ud["users"]
-    assert u2p["alice@example.com"] == "alice@example.com"
+    assert "alice@mailexample.de" in ud["users"]
+    assert u2p["alice@mailexample.de"] == "alice@mailexample.de"
 
 
 async def test_query_single_user_params_correct():
     """Single user: the SQL param contains the username value."""
     aiomysql_mock = _make_aiomysql_mock()
-    pool, cursor = _make_pool([{"uid": "alice@example.com", "mail": "alice@example.com"}])
+    pool, cursor = _make_pool([{"uid": "alice@mailexample.de", "mail": "alice@mailexample.de"}])
     mysql_backend._pools["mysql_users"] = pool
 
     with pytest.MonkeyPatch().context() as mp:
@@ -176,7 +176,7 @@ async def test_query_single_user_params_correct():
         await mysql_backend.query("s", "mysql_users", [_USER_A], {"users": {}}, {}, MYSQL_CFG)
 
     _, params = cursor.execute.call_args[0]
-    assert "alice@example.com" in params
+    assert "alice@mailexample.de" in params
 
 
 # ---------------------------------------------------------------------------
@@ -187,8 +187,8 @@ async def test_query_multiple_users_single_execute():
     """Two users produce exactly one execute() call."""
     aiomysql_mock = _make_aiomysql_mock()
     pool, cursor = _make_pool([
-        {"uid": "alice@example.com", "mail": "alice@example.com"},
-        {"uid": "bob@example.com", "mail": "bob@example.com"},
+        {"uid": "alice@mailexample.de", "mail": "alice@mailexample.de"},
+        {"uid": "bob@mailexample.de", "mail": "bob@mailexample.de"},
     ])
     mysql_backend._pools["mysql_users"] = pool
 
@@ -202,18 +202,18 @@ async def test_query_multiple_users_single_execute():
     cursor.execute.assert_called_once()
     sql, params = cursor.execute.call_args[0]
     assert " OR " in sql
-    assert "alice@example.com" in params
-    assert "bob@example.com" in params
-    assert "alice@example.com" in ud["users"]
-    assert "bob@example.com" in ud["users"]
+    assert "alice@mailexample.de" in params
+    assert "bob@mailexample.de" in params
+    assert "alice@mailexample.de" in ud["users"]
+    assert "bob@mailexample.de" in ud["users"]
 
 
 async def test_query_multiple_users_user_to_pkey():
     """user_to_pkey is correctly set for each input user after a batch query."""
     aiomysql_mock = _make_aiomysql_mock()
     pool, cursor = _make_pool([
-        {"uid": "alice@primary.com", "mail": "alice@example.com"},
-        {"uid": "bob@primary.com", "mail": "bob@example.com"},
+        {"uid": "alice@mailexample.de", "mail": "alice@mailexample.de"},
+        {"uid": "bob@mailexample.de", "mail": "bob@mailexample.de"},
     ])
     mysql_backend._pools["mysql_users"] = pool
 
@@ -225,8 +225,8 @@ async def test_query_multiple_users_user_to_pkey():
 
     assert error is False
     # Each input user's orig_username maps to their result pk.
-    assert u2p.get("alice@example.com") == "alice@primary.com"
-    assert u2p.get("bob@example.com") == "bob@primary.com"
+    assert u2p.get("alice@mailexample.de") == "alice@mailexample.de"
+    assert u2p.get("bob@mailexample.de") == "bob@mailexample.de"
 
 
 async def test_query_no_results_returns_empty_userdata():
@@ -272,27 +272,28 @@ _WILDCARD_CFG: dict[str, Any] = {
 }
 
 _USER_WILDCARD = {
-    "username": "cr@ncxs.de",
-    "address": "cr@ncxs.de",
+    "username": "cr@mailexample.de",
+    "address": "cr@mailexample.de",
     "userpart": "cr",
-    "domain": "ncxs.de",
+    "domain": "mailexample.de",
 }
 
 
 async def test_query_wildcard_catchall_attribution():
     """Third fallback: row matched by a domain wildcard param is attributed correctly.
 
-    The result row has uid=cr@3rc.de and mailLocalAddress=@ncxs.de.
-    Neither the effective username (cr@ncxs.de) nor the pk field value
-    (cr@3rc.de) appear as a key in effective_to_user, so the first two
+    The result row has uid=cr-primary@mailexample.de and mailLocalAddress=@mailexample.de.
+    Neither the effective username (cr@mailexample.de) nor the pk field value
+    (cr-primary@mailexample.de) appear as a key in effective_to_user, so the first two
     attribution fallbacks miss.  The third fallback detects that the frag
-    param @ncxs.de is present in the row values and correctly attributes the
-    row to user cr@ncxs.de, setting user_to_pkey["cr@ncxs.de"] = "cr@3rc.de".
+    param @mailexample.de is present in the row values and correctly attributes
+    the row to user cr@mailexample.de, setting
+    user_to_pkey["cr@mailexample.de"] = "cr-primary@mailexample.de".
     """
     aiomysql_mock = _make_aiomysql_mock()
-    # Row: the catch-all alias maps @ncxs.de → cr@3rc.de.
+    # Row: the catch-all alias maps @mailexample.de → cr-primary@mailexample.de.
     pool, cursor = _make_pool([
-        {"uid": "cr@3rc.de", "mailLocalAddress": "@ncxs.de"},
+        {"uid": "cr-primary@mailexample.de", "mailLocalAddress": "@mailexample.de"},
     ])
     mysql_backend._pools["mysql_wc"] = pool
 
@@ -304,9 +305,9 @@ async def test_query_wildcard_catchall_attribution():
 
     assert error is False
     # The row must be merged under its primary key.
-    assert "cr@3rc.de" in ud["users"]
+    assert "cr-primary@mailexample.de" in ud["users"]
     # The input username must map to the resolved primary key.
-    assert u2p.get("cr@ncxs.de") == "cr@3rc.de"
+    assert u2p.get("cr@mailexample.de") == "cr-primary@mailexample.de"
 
 
 async def test_query_wildcard_catchall_multiple_users():
@@ -317,14 +318,14 @@ async def test_query_wildcard_catchall_multiple_users():
     user_to_pkey.
     """
     _USER_OTHER = {
-        "username": "test@srv.ncxs.de",
-        "address": "test@srv.ncxs.de",
+        "username": "test@other.mailexample.de",
+        "address": "test@other.mailexample.de",
         "userpart": "test",
-        "domain": "srv.ncxs.de",
+        "domain": "other.mailexample.de",
     }
     aiomysql_mock = _make_aiomysql_mock()
     pool, cursor = _make_pool([
-        {"uid": "cr@3rc.de", "mailLocalAddress": "@ncxs.de"},
+        {"uid": "cr-primary@mailexample.de", "mailLocalAddress": "@mailexample.de"},
     ])
     mysql_backend._pools["mysql_wc"] = pool
 
@@ -335,5 +336,5 @@ async def test_query_wildcard_catchall_multiple_users():
         )
 
     assert error is False
-    assert u2p.get("cr@ncxs.de") == "cr@3rc.de"
-    assert "test@srv.ncxs.de" not in u2p
+    assert u2p.get("cr@mailexample.de") == "cr-primary@mailexample.de"
+    assert "test@other.mailexample.de" not in u2p

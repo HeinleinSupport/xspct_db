@@ -63,3 +63,4 @@ Legacy path prefixes (`/query/v1/{user}`, `/query-json/v1`, `/rspamd-settings/v1
 - Do NOT skip SPDX headers on new files.
 - Do NOT change the response schema of existing HTTP endpoints.
 - Only touch `REUSE.toml` for non-source assets needing explicit annotation.
+- **Test email addresses** must use `@mailexample.de` as the domain. Do not use any other domain in tests.

@@ -58,10 +58,10 @@ The L1 in-process cache is consulted first, then Redis (L2) when enabled, then t
 ```json
 {
   "users": {
-    "alice@example.com": {
-      "mail": "alice@example.com",
+    "alice@mailexample.de": {
+      "mail": "alice@mailexample.de",
       "uid": "alice",
-      "aliases": ["a.smith@example.com"]
+      "aliases": ["a.smith@mailexample.de"]
     }
   }
 }
@@ -91,8 +91,8 @@ Redis cache is **not** consulted or populated for batch requests.
 ```json
 {
   "users": [
-    "alice@example.com",
-    "bob@example.com"
+    "alice@mailexample.de",
+    "bob@mailexample.de"
   ]
 }
 ```
@@ -102,11 +102,11 @@ Redis cache is **not** consulted or populated for batch requests.
 ```json
 {
   "users": {
-    "alice@example.com": {
-      "mail": "alice@example.com",
+    "alice@mailexample.de": {
+      "mail": "alice@mailexample.de",
       "uid": "alice"
     },
-    "bob@example.com": {}
+    "bob@mailexample.de": {}
   }
 }
 ```
@@ -128,8 +128,8 @@ Returns an Rspamd settings blob for use with the Rspamd HTTP settings module.
 ```json
 {
   "uid": "<rspamd-session-uid>",
-  "from": "sender@example.com",
-  "rcpts": ["recipient@example.com"],
+  "from": "sender@mailexample.de",
+  "rcpts": ["recipient@mailexample.de"],
   "mta-name": "postfix",
   "mta-host": "mail.example.com",
   "ip": "203.0.113.1",
@@ -155,9 +155,9 @@ Returns an Rspamd settings blob for use with the Rspamd HTTP settings module.
   "symbols_enabled": null,
   "settings_extra_data": {
     "users": {
-      "sender@example.com": {"mail": "sender@example.com", "uid": "sender"}
+      "sender@mailexample.de": {"mail": "sender@mailexample.de", "uid": "sender"}
     },
-    "aliases": {"alias@example.com": "sender@example.com"}
+    "aliases": {"alias@mailexample.de": "sender@mailexample.de"}
   },
   "settings_error": []
 }

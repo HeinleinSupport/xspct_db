@@ -143,13 +143,13 @@ xspct_db_mysql_pool_maxconn: 20
 # ---------------------------------------------------------------------------
 xspct_db_yaml_data:
   users_yaml:
-    alice@example.com:
-      mail: alice@example.com
+    alice@mailexample.de:
+      mail: alice@mailexample.de
       uid: alice
       aliases:
-        - a.smith@example.com
-    bob@example.com:
-      mail: bob@example.com
+        - a.smith@mailexample.de
+    bob@mailexample.de:
+      mail: bob@mailexample.de
       uid: bob
 
 # ---------------------------------------------------------------------------

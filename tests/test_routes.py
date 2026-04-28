@@ -38,20 +38,20 @@ async def test_metrics_unauthenticated(app_client):
 # ---------------------------------------------------------------------------
 
 async def test_query_missing_api_key(app_client):
-    resp = await app_client.get("/v1/query/user@example.com")
+    resp = await app_client.get("/v1/query/user@mailexample.de")
     assert resp.status == 401
 
 
 async def test_query_wrong_api_key(app_client):
     resp = await app_client.get(
-        "/v1/query/user@example.com", headers={"X-Api-Key": "wrong"}
+        "/v1/query/user@mailexample.de", headers={"X-Api-Key": "wrong"}
     )
     assert resp.status == 401
 
 
 async def test_query_dummy_backend(app_client):
     resp = await app_client.get(
-        "/v1/query/user@example.com", headers={"X-Api-Key": "test-key"}
+        "/v1/query/user@mailexample.de", headers={"X-Api-Key": "test-key"}
     )
     assert resp.status == 200
     data = json.loads(await resp.text())
@@ -64,18 +64,18 @@ async def test_query_dummy_backend(app_client):
 
 async def test_query_yaml_known_user(yaml_app_client):
     resp = await yaml_app_client.get(
-        "/v1/query/alice@example.com", headers={"X-Api-Key": "test-key"}
+        "/v1/query/alice@mailexample.de", headers={"X-Api-Key": "test-key"}
     )
     assert resp.status == 200
     data = json.loads(await resp.text())
-    assert "alice@example.com" in data["users"] or any(
+    assert "alice@mailexample.de" in data["users"] or any(
         "alice" in str(v) for v in data["users"].values()
     )
 
 
 async def test_query_yaml_unknown_user_returns_empty(yaml_app_client):
     resp = await yaml_app_client.get(
-        "/v1/query/nobody@example.com", headers={"X-Api-Key": "test-key"}
+        "/v1/query/nobody@mailexample.de", headers={"X-Api-Key": "test-key"}
     )
     assert resp.status == 200
     data = json.loads(await resp.text())
@@ -85,7 +85,7 @@ async def test_query_yaml_unknown_user_returns_empty(yaml_app_client):
 async def test_query_alias_lookup(yaml_app_client):
     """Query by alias should resolve to the canonical user."""
     resp = await yaml_app_client.get(
-        "/v1/query/a@example.com", headers={"X-Api-Key": "test-key"}
+        "/v1/query/a@mailexample.de", headers={"X-Api-Key": "test-key"}
     )
     assert resp.status == 200
 
@@ -133,8 +133,8 @@ async def test_rspamd_settings_with_body(yaml_app_client):
         "/v1/rspamd-settings",
         data=json.dumps({
             "uid": "abc123",
-            "from": "alice@example.com",
-            "rcpts": ["nobody@example.com"],
+            "from": "alice@mailexample.de",
+            "rcpts": ["nobody@mailexample.de"],
         }),
         headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
     )
@@ -152,8 +152,8 @@ async def test_rspamd_settings_deduplication(yaml_app_client):
     resp = await yaml_app_client.post(
         "/v1/rspamd-settings",
         data=json.dumps({
-            "from": "alice@example.com",
-            "rcpts": ["alice@example.com", "nobody@example.com"],
+            "from": "alice@mailexample.de",
+            "rcpts": ["alice@mailexample.de", "nobody@mailexample.de"],
         }),
         headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
     )

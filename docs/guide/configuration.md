@@ -116,10 +116,10 @@ xspct_db_queries:
 
 xspct_db_yaml_data:
   users:
-    alice@example.com:
-      mail: alice@example.com
+    alice@mailexample.de:
+      mail: alice@mailexample.de
       uid: alice
-      aliases: [a@example.com]
+      aliases: [a@mailexample.de]
 ```
 
 ### LDAP backend

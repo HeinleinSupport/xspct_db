@@ -23,20 +23,20 @@ def _cfg(**extra: Any) -> dict[str, Any]:
 
 
 def test_dummy_returns_uid():
-    users = [{"username": "user@example.com"}]
+    users = [{"username": "user@mailexample.de"}]
     userdata = query("s", "test_dummy", users, _cfg())
-    assert "user@example.com" in userdata["users"]
-    assert userdata["users"]["user@example.com"]["uid"] == "user@example.com"
+    assert "user@mailexample.de" in userdata["users"]
+    assert userdata["users"]["user@mailexample.de"]["uid"] == "user@mailexample.de"
 
 
 def test_dummy_multiple_users():
-    users = [{"username": "a@example.com"}, {"username": "b@example.com"}]
+    users = [{"username": "a@mailexample.de"}, {"username": "b@mailexample.de"}]
     userdata = query("s", "test_dummy", users, _cfg())
     assert len(userdata["users"]) == 2
 
 
 def test_dummy_invalid_query_name():
-    users = [{"username": "user@example.com"}]
+    users = [{"username": "user@mailexample.de"}]
     userdata = query("s", "nonexistent", users, _cfg())
     assert userdata["users"] == {}
 

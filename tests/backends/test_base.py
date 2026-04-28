@@ -73,15 +73,15 @@ def test_maybe_list_converts_string():
 # ---------------------------------------------------------------------------
 
 def test_translate_entries_basic():
-    data = {"mail": "user@example.com", "uid": "user"}
+    data = {"mail": "user@mailexample.de", "uid": "user"}
     query_config = {"primary_key": "mail", "attr_list": ["*"]}
     pk, entries = translate_entries("s", query_config, data, _cfg())
-    assert pk == "user@example.com"
+    assert pk == "user@mailexample.de"
     assert entries["uid"] == ["user"]
 
 
 def test_translate_entries_key_translation():
-    data = {"mail": "user@example.com", "sn": "Smith"}
+    data = {"mail": "user@mailexample.de", "sn": "Smith"}
     query_config = {
         "primary_key": "mail",
         "attr_list": ["*"],
@@ -93,14 +93,14 @@ def test_translate_entries_key_translation():
 
 
 def test_translate_entries_force_primary_key():
-    data = {"mail": "user@example.com"}
+    data = {"mail": "user@mailexample.de"}
     query_config = {"primary_key": "mail", "attr_list": ["*"]}
     pk, _ = translate_entries("s", query_config, data, _cfg(), force_primary_key="forced")
     assert pk == "forced"
 
 
 def test_translate_entries_attr_filter():
-    data = {"mail": "user@example.com", "secret": "hidden"}
+    data = {"mail": "user@mailexample.de", "secret": "hidden"}
     query_config = {"primary_key": "mail", "attr_list": ["mail"]}
     _, entries = translate_entries("s", query_config, data, _cfg())
     assert "secret" not in entries

@@ -103,3 +103,4 @@ Both layers are written on a backend miss. L2 hits are backfilled into L1. L1 ca
 - DO NOT skip SPDX headers on new files.
 - DO NOT change the `text/plain; version=0.0.4` content-type in `routes.py` — it is protocol-mandated by Rspamd.
 - ONLY touch `REUSE.toml` when adding non-source assets that need explicit annotation.
+- **Test email addresses** must use `@mailexample.de` as the domain. Do not use any other domain in tests.
