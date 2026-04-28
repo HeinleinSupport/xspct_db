@@ -64,6 +64,7 @@ dev = [
   "pytest-cov>=5.0",
   "aioresponses>=0.7",
   "fakeredis>=2.23",
+  "ruff>=0.4",
 ]
 docs = [
   "sphinx>=7.0",
@@ -95,3 +96,10 @@ branch = true
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]

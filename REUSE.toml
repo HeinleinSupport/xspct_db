@@ -8,9 +8,11 @@ version = 1
 path = [
     ".github/agents/xspct_db.agent.md",
     ".github/copilot-instructions.md",
+    ".github/prompts/**",
     ".gitignore",
     ".reuseignore",
     "CLAUDE.md",
+    "README.md",
     "docs/**",
 ]
 SPDX-FileCopyrightText = "2026 Carsten Rosenberg <c.rosenberg@heinlein-support.de>"
