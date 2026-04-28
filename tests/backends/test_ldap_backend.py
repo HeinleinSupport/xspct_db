@@ -221,3 +221,95 @@ def test_close_pools():
     ldap_backend.close_pools()
     pool.close.assert_called_once()
     assert ldap_backend._pools == {}
+
+
+async def test_query_multiple_users_batched():
+    """Multiple users are combined into a single LDAP search with an OR filter."""
+    bonsai_mock = _make_bonsai_mock()
+    conn = AsyncMock()
+    conn.search = AsyncMock(return_value=[
+        {"mail": "alice@example.com", "uid": "alice"},
+        {"mail": "bob@example.com", "uid": "bob"},
+    ])
+    ldap_backend._pools["ldap_users"] = _make_pool(conn)
+
+    cfg_with_replace = {
+        **LDAP_CFG,
+        "xspct_db_queries": {
+            "ldap_users": {
+                **LDAP_CFG["xspct_db_queries"]["ldap_users"],
+                "search_filter": "(mail=%u)",
+                "search_filter_replace": {"%u": "username"},
+            }
+        },
+    }
+    users = [
+        {"username": "alice@example.com", "address": "alice@example.com", "userpart": "alice", "domain": "example.com"},
+        {"username": "bob@example.com", "address": "bob@example.com", "userpart": "bob", "domain": "example.com"},
+    ]
+
+    with pytest.MonkeyPatch().context() as mp:
+        mp.setitem(sys.modules, "bonsai", bonsai_mock)
+        mp.setitem(sys.modules, "bonsai.asyncio", bonsai_mock)
+        ud, u2p, error = await ldap_backend.query(
+            "s", "ldap_users", users, {"users": {}}, {}, cfg_with_replace,
+        )
+
+    assert error is False
+    # Only ONE search() call regardless of user count.
+    conn.search.assert_called_once()
+    filter_arg = conn.search.call_args[1]["filter_exp"]
+    assert filter_arg.startswith("(|")
+    assert "alice@example.com" in filter_arg
+    assert "bob@example.com" in filter_arg
+    assert "alice@example.com" in ud["users"]
+    assert "bob@example.com" in ud["users"]
+
+
+# ---------------------------------------------------------------------------
+# Tests – third attribution fallback (frag_values)
+# ---------------------------------------------------------------------------
+
+async def test_query_attribution_via_frag_values():
+    """Third fallback: user is attributed when effective_username appears in frag_values.
+
+    For LDAP, frag_values is derived from query_values (= effective_username),
+    so this fallback is a safety-net duplicate of the first check.  The test
+    verifies that a row whose primary-key differs from both the input username
+    and every effective_username is still correctly attributed when the input
+    username appears somewhere in the row's attribute values (triggering the
+    first OR third fallback path).
+    """
+    bonsai_mock = _make_bonsai_mock()
+    conn = AsyncMock()
+    # Row: primary key is different from the input username, but the input
+    # username appears in a secondary attribute (mailLocalAddress), so the
+    # first fallback (effective_username in row_values) fires.
+    conn.search = AsyncMock(return_value=[
+        {"mail": "cr@3rc.de", "mailLocalAddress": "cr@ncxs.de"},
+    ])
+    ldap_backend._pools["ldap_users"] = _make_pool(conn)
+
+    cfg_with_replace = {
+        **LDAP_CFG,
+        "xspct_db_queries": {
+            "ldap_users": {
+                **LDAP_CFG["xspct_db_queries"]["ldap_users"],
+                "search_filter": "(mailLocalAddress=%u)",
+                "search_filter_replace": {"%u": "username"},
+                "primary_key": "mail",
+            }
+        },
+    }
+    users = [{"username": "cr@ncxs.de", "address": "cr@ncxs.de", "userpart": "cr", "domain": "ncxs.de"}]
+
+    with pytest.MonkeyPatch().context() as mp:
+        mp.setitem(sys.modules, "bonsai", bonsai_mock)
+        mp.setitem(sys.modules, "bonsai.asyncio", bonsai_mock)
+        ud, u2p, error = await ldap_backend.query(
+            "s", "ldap_users", users, {"users": {}}, {}, cfg_with_replace,
+        )
+
+    assert error is False
+    assert "cr@3rc.de" in ud["users"]
+    assert u2p.get("cr@ncxs.de") == "cr@3rc.de"
