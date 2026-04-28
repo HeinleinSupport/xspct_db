@@ -26,7 +26,7 @@ python -m xspct_db /etc/xspct-db.yml
 
 ### Query the running daemon
 ```bash
-curl -s -H "X-Api-Key: your-key" http://localhost:11350/v1/query/user@example.com | python3 -m json.tool
+curl -s -H "X-Api-Key: your-key" http://localhost:11350/v1/query/user@mailexample.de | python3 -m json.tool
 ```
 
 ### Build docs

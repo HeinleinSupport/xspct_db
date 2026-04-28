@@ -264,26 +264,27 @@ class QueryView(PydanticView):
         Look up a single user across all configured backends.
 
         The ``user`` path segment is URL-decoded before lookup.
-        Redis cache is consulted first when enabled.
+        The L1 in-process cache is consulted first, then Redis (L2) when enabled,
+        then the backend.
 
         **Example curl**::
 
             curl -s -H "X-Api-Key: your-key" \
-                 http://localhost:11350/v1/query/alice@example.com | python3 -m json.tool
+                 http://localhost:11350/v1/query/alice@mailexample.de | python3 -m json.tool
 
         **Example request**::
 
-            GET /v1/query/alice@example.com
+            GET /v1/query/alice@mailexample.de
             X-Api-Key: your-key
 
         **Example response (user found)**::
 
             {
                 "users": {
-                    "alice@example.com": {
-                        "mail": "alice@example.com",
+                    "alice@mailexample.de": {
+                        "mail": "alice@mailexample.de",
                         "uid": "alice",
-                        "aliases": ["a.smith@example.com"]
+                        "aliases": ["a.smith@mailexample.de"]
                     }
                 }
             }
@@ -392,14 +393,16 @@ class QueryJsonView(PydanticView):
         Batch user lookup.
 
         Accepts a list of users and queries all configured backends for each.
-        Redis cache is **not** consulted or populated on batch requests.
+        The response cache (``xspct_db_response_cache``) is consulted first when enabled;
+        on a miss the result is stored for subsequent identical requests.
+        Redis (L2) is **not** consulted or populated on batch requests.
 
         **Example curl**::
 
             curl -s -X POST http://localhost:11350/v1/query-json \
                  -H "X-Api-Key: your-key" \
                  -H "Content-Type: application/json" \
-                 -d '{"users": ["alice@example.com", "bob@example.com"]}' | python3 -m json.tool
+                 -d '{"users": ["alice@mailexample.de", "bob@mailexample.de"]}' | python3 -m json.tool
 
         **Example request**::
 
@@ -409,8 +412,8 @@ class QueryJsonView(PydanticView):
 
             {
                 "users": [
-                    "alice@example.com",
-                    "bob@example.com"
+                    "alice@mailexample.de",
+                    "bob@mailexample.de"
                 ]
             }
 
@@ -418,12 +421,12 @@ class QueryJsonView(PydanticView):
 
             {
                 "users": {
-                    "alice@example.com": {
-                        "mail": "alice@example.com",
+                    "alice@mailexample.de": {
+                        "mail": "alice@mailexample.de",
                         "uid": "alice",
-                        "aliases": ["a.smith@example.com"]
+                        "aliases": ["a.smith@mailexample.de"]
                     },
-                    "bob@example.com": {}
+                    "bob@mailexample.de": {}
                 }
             }
 
@@ -498,7 +501,7 @@ class RspamdSettingsView(PydanticView):
             curl -s -X POST http://localhost:11350/v1/rspamd-settings \
                  -H "X-Api-Key: your-key" \
                  -H "Content-Type: application/json" \
-                 -d '{"from": "alice@example.com", "rcpts": ["bob@example.com"]}' | python3 -m json.tool
+                 -d '{"from": "alice@mailexample.de", "rcpts": ["bob@mailexample.de"]}' | python3 -m json.tool
 
         **Example request**::
 
@@ -513,9 +516,23 @@ class RspamdSettingsView(PydanticView):
                     "greylist": 8,
                     "add header": 13
                 },
-                "flags": ["skip_process", "no_stat"],
-                "groups_disabled": ["antivirus", "external_services"],
-                "symbols": ["INCOMING_API_TEST", "INCOMING"]
+                "flags": [],
+                "groups_disabled": [],
+                "symbols_disabled": ["DKIM_SIGNED"],
+                "symbols": ["SETTINGS_API_TEST_RESPONSE"],
+                "settings_extra_data": {
+                    "users": {
+                        "alice@mailexample.de": {
+                            "mail": "alice@mailexample.de",
+                            "uid": "alice",
+                            "aliases": ["a.smith@mailexample.de"]
+                        }
+                    },
+                    "aliases": {
+                        "a.smith@mailexample.de": "alice@mailexample.de"
+                    }
+                },
+                "settings_error": []
             }
 
         """

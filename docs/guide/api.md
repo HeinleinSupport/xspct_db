@@ -154,21 +154,25 @@ listed in `xspct_db_response_cache.rspamd_key_fields`.
     "greylist": 8,
     "add header": 13
   },
-  "flags": ["skip_process", "no_stat"],
-  "groups_disabled": ["antivirus", "external_services"],
-  "groups_enabled": null,
-  "symbols": ["INCOMING_API_TEST", "INCOMING"],
-  "symbols_disabled": [],
-  "symbols_enabled": null,
+  "flags": [],
+  "groups_disabled": [],
+  "symbols_disabled": ["DKIM_SIGNED"],
+  "symbols": ["SETTINGS_API_TEST_RESPONSE"],
   "settings_extra_data": {
     "users": {
-      "sender@mailexample.de": {"mail": "sender@mailexample.de", "uid": "sender"}
+      "sender@mailexample.de": {
+        "mail": "sender@mailexample.de",
+        "uid": "sender",
+        "aliases": ["s.smith@mailexample.de"]
+      }
     },
-    "aliases": {"alias@mailexample.de": "sender@mailexample.de"}
+    "aliases": {"s.smith@mailexample.de": "sender@mailexample.de"}
   },
   "settings_error": []
 }
 ```
+
+Fields with `null` values (`groups_enabled`, `symbols_enabled`) are omitted from the response (`exclude_none=True`).
 
 `settings_extra_data` contains all users found for the envelope addresses (sender + recipients)
 mapped by primary key, plus a reverse alias map.  It is an empty object when no users are found.
