@@ -7,8 +7,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from xspct_db.backends.yaml_backend import query
 
 

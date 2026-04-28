@@ -8,11 +8,10 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from aiohttp.test_utils import TestClient, TestServer
+from aiohttp.test_utils import TestClient
 
 from xspct_db import stats
 from xspct_db.server import create_app
-
 
 # ---------------------------------------------------------------------------
 # Minimal configurations

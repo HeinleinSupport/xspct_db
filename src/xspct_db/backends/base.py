@@ -9,7 +9,7 @@ import logging
 import sys
 from typing import Any
 
-from xspct_db.utils import dict_merge, timer
+from xspct_db.utils import dict_merge
 
 logger = logging.getLogger(__name__)
 

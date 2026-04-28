@@ -12,12 +12,10 @@ import sys
 from typing import Any
 
 from aiohttp import web
-
 from aiohttp_pydantic import oas
 
-from xspct_db import cache, stats
+from xspct_db import __version__, cache, stats
 from xspct_db import config as cfg_mod
-from xspct_db import __version__
 from xspct_db.routes import setup_routes
 
 try:

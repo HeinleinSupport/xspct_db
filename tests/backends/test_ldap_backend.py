@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from xspct_db.backends import ldap_backend
 from xspct_db import stats
+from xspct_db.backends import ldap_backend
 
 # ---------------------------------------------------------------------------
 # Shared config

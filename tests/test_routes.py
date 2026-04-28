@@ -6,8 +6,6 @@
 from __future__ import annotations
 
 import json
-import pytest
-
 
 # ---------------------------------------------------------------------------
 # Health / utility
@@ -234,6 +232,7 @@ async def test_rspamd_settings_returns_504_on_timeout(delay_app_client):
 async def test_foreground_overload_returns_503(delay_app_client):
     """When all foreground slots are busy, new requests get 503."""
     import asyncio
+
     from xspct_db import stats as xstats
     headers = {"X-Api-Key": "test-key"}
     # Saturate the 2 fg slots + 1 bg slot, then the 4th should get 503

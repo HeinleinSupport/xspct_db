@@ -8,8 +8,8 @@ from __future__ import annotations
 from typing import Any
 
 from xspct_db.backends.base import (
-    merge_userdata,
     maybe_list,
+    merge_userdata,
     split_values_into_list,
     translate_entries,
 )

@@ -13,8 +13,8 @@ import re
 import timeit
 from typing import Any
 
-from xspct_db.backends.base import merge_userdata, split_values_into_list, translate_entries
 from xspct_db import stats
+from xspct_db.backends.base import merge_userdata, split_values_into_list, translate_entries
 from xspct_db.utils import timer
 
 logger = logging.getLogger(__name__)
