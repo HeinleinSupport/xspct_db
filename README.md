@@ -38,9 +38,12 @@ Configuration is a single YAML file. All keys are optional; see
 | GET | `/` | — | Health / liveness check |
 | GET | `/ping` | — | Ping → Pong |
 | GET | `/metrics` | optional | Prometheus metrics |
-| GET | `/query/v1/{user}` | API key | Single user lookup |
-| POST | `/query-json/v1` | API key | Batch user lookup |
-| POST | `/rspamd-settings/v1` | API key | Rspamd settings blob |
+| GET | `/v1/query/{user}` | API key | Single user lookup |
+| POST | `/v1/query-json` | API key | Batch user lookup |
+| POST | `/v1/rspamd-settings` | API key | Rspamd settings blob |
+
+Legacy path prefixes (`/query/v1/{user}`, `/query-json/v1`, `/rspamd-settings/v1`) are also
+accepted for backwards compatibility.
 
 Authentication uses the `X-Api-Key` header (configurable).
 See [docs/guide/api.md](docs/guide/api.md) for request/response details and all exposed metrics.

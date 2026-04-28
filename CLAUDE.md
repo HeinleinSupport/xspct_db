@@ -26,7 +26,7 @@ python -m xspct_db /etc/xspct-db.yml
 
 ### Query the running daemon
 ```bash
-curl -s -H "X-Api-Key: your-key" http://localhost:11350/query/v1/user@example.com | python3 -m json.tool
+curl -s -H "X-Api-Key: your-key" http://localhost:11350/v1/query/user@example.com | python3 -m json.tool
 ```
 
 ### Build docs
@@ -73,9 +73,11 @@ Entry point is `src/xspct_db/__main__.py` → `server.run()`.
 | GET | `/` | — | Health check |
 | GET | `/ping` | — | Returns `Pong` |
 | GET | `/metrics` | optional | Prometheus metrics |
-| GET | `/query/v1/{user}` | required | Single-user lookup |
-| POST | `/query-json/v1` | required | Batch user lookup |
-| POST | `/rspamd-settings/v1` | required | Rspamd settings blob |
+| GET | `/v1/query/{user}` | required | Single-user lookup |
+| POST | `/v1/query-json` | required | Batch user lookup |
+| POST | `/v1/rspamd-settings` | required | Rspamd settings blob |
+
+Legacy path prefixes (`/query/v1/{user}`, `/query-json/v1`, `/rspamd-settings/v1`) are also registered for backwards compatibility.
 
 ## Conventions
 

@@ -39,28 +39,38 @@ Authentication is optional and controlled by `xspct_db_metrics_auth`.
 
 ## Query Endpoints
 
+The canonical path prefix is `/v1/`; legacy paths (`/query/v1/{user}`,
+`/query-json/v1`, `/rspamd-settings/v1`) are accepted for backwards compatibility.
+
 ### `GET /v1/query/{user}`
 
 Look up a single user across all configured query backends.
+Redis cache is consulted first when enabled.
 
 **Authentication:** `X-Api-Key` header (or the configured header name)
 
 **Path parameter:** `user` – the email address or username to look up (URL-encoded)
 
-**Response:**
+**Response (user found):**
 
 ```json
 {
   "users": {
     "alice@example.com": {
-      "mail": ["alice@example.com"],
-      "uid": ["alice"]
+      "mail": "alice@example.com",
+      "uid": "alice",
+      "aliases": ["a.smith@example.com"]
     }
   }
 }
 ```
 
-Returns an empty `users` object (`{}`) when the user is not found.
+**Response (user not found):**
+
+```json
+{"users": {}}
+```
+
 Returns `401 Unauthorized` on bad/missing API key.
 Returns `500` on backend errors.
 Returns `504` when a per-request timeout is exceeded.
@@ -70,6 +80,7 @@ Returns `504` when a per-request timeout is exceeded.
 ### `POST /v1/query-json`
 
 Batch lookup for multiple users in a single request.
+Redis cache is **not** consulted or populated for batch requests.
 
 **Authentication:** `X-Api-Key` header
 
@@ -78,13 +89,29 @@ Batch lookup for multiple users in a single request.
 ```json
 {
   "users": [
-    {"username": "alice@example.com"},
-    {"username": "bob@example.com"}
+    "alice@example.com",
+    "bob@example.com"
   ]
 }
 ```
 
-**Response:** same shape as `/v1/query/{user}` but containing all matched users.
+**Response:**
+
+```json
+{
+  "users": {
+    "alice@example.com": {
+      "mail": "alice@example.com",
+      "uid": "alice"
+    },
+    "bob@example.com": {}
+  }
+}
+```
+
+Users not found in any backend are returned with an empty dict.
+Returns `401 Unauthorized` on bad/missing API key.
+Returns `500` on backend errors.
 
 ---
 
@@ -94,19 +121,46 @@ Returns an Rspamd settings blob for use with the Rspamd HTTP settings module.
 
 **Authentication:** `X-Api-Key` header
 
-**Request body:** empty JSON object or no body
+**Request body** (all fields optional):
+
+```json
+{
+  "uid": "<rspamd-session-uid>",
+  "from": "sender@example.com",
+  "rcpts": ["recipient@example.com"],
+  "mta-name": "postfix",
+  "mta-host": "mail.example.com",
+  "ip": "203.0.113.1",
+  "settings-name": "inbound",
+  "settings-id": "abc123"
+}
+```
 
 **Response** (`application/json`):
 
 ```json
 {
   "actions": {
-    "reject": 17,
-    "greylist": 10,
-    "add header": 14
+    "reject": 15,
+    "greylist": 8,
+    "add header": 13
   },
   "flags": ["skip_process", "no_stat"],
   "groups_disabled": ["antivirus", "external_services"],
-  "symbols": ["INCOMING_API_TEST", "INCOMING"]
+  "groups_enabled": null,
+  "symbols": ["INCOMING_API_TEST", "INCOMING"],
+  "symbols_disabled": [],
+  "symbols_enabled": null,
+  "settings_extra_data": {
+    "users": {
+      "sender@example.com": {"mail": "sender@example.com", "uid": "sender"}
+    },
+    "aliases": {"alias@example.com": "sender@example.com"}
+  },
+  "settings_error": []
 }
 ```
+
+`settings_extra_data` contains all users found for the envelope addresses (sender + recipients)
+mapped by primary key, plus a reverse alias map.  It is an empty object when no users are found.
+`settings_error` contains any error messages produced during settings evaluation.

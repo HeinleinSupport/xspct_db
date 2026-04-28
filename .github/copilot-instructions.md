@@ -24,12 +24,25 @@ src/xspct_db/          # Main package
     mysql_backend.py   # MySQL via aiomysql
     yaml_backend.py    # Static YAML file backend
 tests/                 # pytest-asyncio test suite
-  conftest.py          # Shared fixtures (base_cfg, app_client, yaml_app_client)
+  conftest.py          # Shared fixtures (base_cfg, yaml_cfg, app_client, yaml_app_client)
   backends/            # Per-backend unit tests
 LICENSES/EUPL-1.2.txt  # Canonical licence text (REUSE)
 REUSE.toml             # REUSE 3.0 compliance manifest
 pyproject.toml         # Build metadata (hatchling)
 ```
+
+## HTTP endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/` | — | Health check |
+| GET | `/ping` | — | Returns `Pong` |
+| GET | `/metrics` | optional | Prometheus metrics |
+| GET | `/v1/query/{user}` | required | Single-user lookup |
+| POST | `/v1/query-json` | required | Batch user lookup |
+| POST | `/v1/rspamd-settings` | required | Rspamd settings blob |
+
+Legacy path prefixes (`/query/v1/{user}`, `/query-json/v1`, `/rspamd-settings/v1`) are also registered for backwards compatibility.
 
 ## Conventions
 
