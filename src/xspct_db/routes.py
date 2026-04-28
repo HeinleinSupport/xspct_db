@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Any
 from urllib.parse import unquote
@@ -75,6 +76,17 @@ def _prometheus_lines(s_stats: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _log_response(s: str, response: web.Response) -> web.Response:
+    """Log response status and body at DEBUG level, then return the response unchanged."""
+    if logger.isEnabledFor(logging.DEBUG):
+        try:
+            body = response.text
+        except Exception:
+            body = None
+        logger.debug("%s ← %d  body=%s", s, response.status, body)
+    return response
+
+
 def _log_request(s: str, request: web.Request, body: Any = None) -> None:
     """Emit a DEBUG line with method, URL, all headers (API key masked), and optional body."""
     if not logger.isEnabledFor(logging.DEBUG):
@@ -87,11 +99,16 @@ def _log_request(s: str, request: web.Request, body: Any = None) -> None:
         else:
             headers[name] = value
     params = dict(request.rel_url.query)
+    try:
+        matched_path = request.match_info.route.resource.canonical
+    except Exception:
+        matched_path = "-"
     logger.debug(
-        "%s %s %s  params=%s  headers=%s  body=%s",
+        "%s %s %s (matched: %s)  params=%s  headers=%s  body=%s",
         s,
         request.method,
         request.path,
+        matched_path,
         params or "-",
         headers,
         body if body is not None else "-",
@@ -213,7 +230,7 @@ class QueryView(PydanticView):
         _log_request(s, self.request)
 
         if not verify_api_key(s, self.request.headers.get(cfg["xspct_db_api_header"]), cfg):
-            return web.Response(status=401, text="401 Unauthorized")
+            return _log_response(s, web.Response(status=401, text="401 Unauthorized"))
 
         user = unquote(user)
         userdata: dict[str, Any] = {"users": {}}
@@ -234,11 +251,11 @@ class QueryView(PydanticView):
         if isinstance(cache_object, dict):
             stats.stats["requests_known"] += 1
             userdata["users"][user] = cache_object
-            return web.json_response(userdata, headers={"Connection": "Keep-Alive"})
+            return _log_response(s, web.json_response(userdata, headers={"Connection": "Keep-Alive"}))
 
         if isinstance(cache_object, bool) and not cache_object:
             stats.stats["requests_unknown"] += 1
-            return web.json_response(userdata, headers={"Connection": "Keep-Alive"})
+            return _log_response(s, web.json_response(userdata, headers={"Connection": "Keep-Alive"}))
 
         # --- Backend query ---
         user_parts = user.split("@", 1)
@@ -263,16 +280,16 @@ class QueryView(PydanticView):
         )
 
         if query_error == "504":
-            return web.Response(status=504, text="504 Request Timeout")
+            return _log_response(s, web.Response(status=504, text="504 Request Timeout"))
         if isinstance(query_error, str):
-            return web.Response(status=500, text=query_error)
+            return _log_response(s, web.Response(status=500, text=query_error))
 
         if user in user_to_pkey:
             stats.stats["requests_known"] += 1
         else:
             stats.stats["requests_unknown"] += 1
 
-        return web.json_response(userdata, headers={"Connection": "Keep-Alive"})
+        return _log_response(s, web.json_response(userdata, headers={"Connection": "Keep-Alive"}))
 
 
 class QueryJsonView(PydanticView):
@@ -319,7 +336,7 @@ class QueryJsonView(PydanticView):
         _log_request(s, self.request, body=body.model_dump())
 
         if not verify_api_key(s, self.request.headers.get(cfg["xspct_db_api_header"]), cfg):
-            return web.Response(status=401, text="401 Unauthorized")
+            return _log_response(s, web.Response(status=401, text="401 Unauthorized"))
 
         users = [{"username": u.username} for u in body.users]
         userdata: dict[str, Any] = {"users": {}}
@@ -332,9 +349,9 @@ class QueryJsonView(PydanticView):
         )
 
         if isinstance(query_error, str):
-            return web.Response(status=500, text=query_error)
+            return _log_response(s, web.Response(status=500, text=query_error))
 
-        return web.json_response(userdata, headers={"Connection": "Keep-Alive"})
+        return _log_response(s, web.json_response(userdata, headers={"Connection": "Keep-Alive"}))
 
 
 class RspamdSettingsView(PydanticView):
@@ -369,18 +386,23 @@ class RspamdSettingsView(PydanticView):
         s_id = generate_session_id()
         s = add_rspamd_id(s_id, self.request.headers.get(cfg["xspct_db_rspamd_header"]))
 
-        _log_request(s, self.request)
+        raw_body = await self.request.read()
+        try:
+            parsed_body = json.loads(raw_body) if raw_body else None
+        except Exception:
+            parsed_body = raw_body.decode() if raw_body else None
+        _log_request(s, self.request, body=parsed_body)
 
         if not verify_api_key(s, self.request.headers.get(cfg["xspct_db_api_header"]), cfg):
-            return web.Response(status=401, text="401 Unauthorized")
+            return _log_response(s, web.Response(status=401, text="401 Unauthorized"))
 
         reply = RspamdSettingsResponse(
             actions={"reject": 15, "greylist": 8, "add header": 13},
             # flags=["skip_process", "no_stat"],
-            # groups_disabled=["antivirus", "external_services"],
+            symbols_disabled=["DKIM_SIGNED"],
             symbols=["SETTINGS_API_TEST_RESPONSE"],
         )
-        return web.json_response(reply.model_dump(), headers={"Connection": "Keep-Alive"})
+        return _log_response(s, web.json_response(reply.model_dump(), headers={"Connection": "Keep-Alive"}))
 
 
 # ---------------------------------------------------------------------------
@@ -389,9 +411,25 @@ class RspamdSettingsView(PydanticView):
 
 def setup_routes(app: web.Application) -> None:
     """Register all route views on *app*."""
-    app.router.add_view("/", HealthView)
-    app.router.add_view("/ping", PingView)
-    app.router.add_view("/metrics", MetricsView)
-    app.router.add_view("/v1/query/{user}", QueryView)
-    app.router.add_view("/v1/query-json", QueryJsonView)
-    app.router.add_view("/v1/rspamd-settings", RspamdSettingsView)
+    _routes: list[tuple[str, type]] = [
+        ("/", HealthView),
+        ("/ping", PingView),
+        ("/ping/", PingView),
+        ("/metrics", MetricsView),
+        ("/metrics/", MetricsView),
+        ("/v1/query/{user}", QueryView),
+        ("/v1/query/{user}/", QueryView),
+        ("/query/v1/{user}", QueryView),
+        ("/query/v1/{user}/", QueryView),
+        ("/v1/query-json", QueryJsonView),
+        ("/v1/query-json/", QueryJsonView),
+        ("/query-json/v1", QueryJsonView),
+        ("/query-json/v1/", QueryJsonView),
+        ("/v1/rspamd-settings", RspamdSettingsView),
+        ("/v1/rspamd-settings/", RspamdSettingsView),
+        ("/rspamd-settings/v1", RspamdSettingsView),
+        ("/rspamd-settings/v1/", RspamdSettingsView),
+    ]
+    for path, view in _routes:
+        logger.debug("registering route: %s → %s", path, view.__name__)
+        app.router.add_view(path, view)
