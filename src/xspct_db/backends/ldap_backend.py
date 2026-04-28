@@ -98,6 +98,16 @@ async def query(
                         if attr in userdata["users"][pkey]:
                             force_prim_key = pkey
                             query_values = userdata["users"][pkey][attr]
+                # When use_result resolved new query_values, rebuild user
+                # fields so search_filter_replace substitution picks them up.
+                if force_prim_key is not False:
+                    resolved = query_values[0] if isinstance(query_values, list) else str(query_values)
+                    u = dict(u)
+                    u["username"] = resolved
+                    u["address"] = resolved
+                    parts = resolved.split("@", 1)
+                    u["userpart"] = parts[0]
+                    u["domain"] = parts[1] if len(parts) > 1 else u.get("domain", "")
 
                 ldap_filter = query_config["search_filter"]
                 if isinstance(query_config.get("search_filter_replace"), dict):

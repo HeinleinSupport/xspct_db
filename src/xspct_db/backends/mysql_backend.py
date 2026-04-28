@@ -9,6 +9,7 @@ aiomysql is an optional dependency – import errors are caught at query time.
 from __future__ import annotations
 
 import logging
+import re
 import timeit
 from typing import Any
 
@@ -98,16 +99,52 @@ async def query(
                         if attr in userdata["users"][pkey]:
                             force_prim_key = pkey
                             query_values = userdata["users"][pkey][attr]
+                # When use_result resolved new query_values, rebuild user
+                # fields so query_replace substitution picks them up.
+                if force_prim_key is not False:
+                    resolved = query_values[0] if isinstance(query_values, list) else str(query_values)
+                    u = dict(u)
+                    u["username"] = resolved
+                    u["address"] = resolved
+                    parts = resolved.split("@", 1)
+                    u["userpart"] = parts[0]
+                    u["domain"] = parts[1] if len(parts) > 1 else u.get("domain", "")
 
                 sql = query_config["query"]
                 params: list[Any] = []
                 if isinstance(query_config.get("query_replace"), dict):
-                    for placeholder, field in query_config["query_replace"].items():
-                        if field in u:
-                            vals = split_values_into_list(s, u[field], cfg=cfg)
+                    # Process placeholders in SQL occurrence order so positional %s params align correctly.
+                    # Handle quoted placeholders like "%u", '@%d' — strip the SQL quotes and fold
+                    # any prefix/suffix text (e.g. "@") into the param value.
+                    active = {
+                        ph: field
+                        for ph, field in query_config["query_replace"].items()
+                        if field in u and ph in sql
+                    }
+                    for placeholder in sorted(active, key=lambda ph: sql.index(ph)):
+                        field = active[placeholder]
+                        vals = split_values_into_list(s, u[field], cfg=cfg)
+                        val = vals[0]
+                        # Match optional SQL quoting: ["'](prefix)placeholder(suffix)["']
+                        pat = re.compile(
+                            r'(["\'])(.*?)' + re.escape(placeholder) + r'(.*?)\1'
+                        )
+                        new_params: list[str] = []
+
+                        def _replacer(m: re.Match, _val: str = val, _np: list = new_params) -> str:
+                            _np.append(f"{m.group(2)}{_val}{m.group(3)}")
+                            return "%s"
+
+                        new_sql, n = pat.subn(_replacer, sql)
+                        if n:
+                            sql = new_sql
+                            params.extend(new_params)
+                        else:
+                            # No surrounding quotes — bare placeholder
                             occurrences = sql.count(placeholder)
                             sql = sql.replace(placeholder, "%s")
-                            params.extend([vals[0]] * occurrences)
+                            params.extend([val] * occurrences)
+
 
                 t0 = timeit.default_timer()
                 try:
