@@ -86,6 +86,8 @@ async def query(
 
     query_config = queries[query_name]
 
+    logger.debug("%s (%s) - (%s) - query users: %s", s, timer(), query_name, users)
+
     try:
         async with _pools[query_name].acquire() as conn:
             for u in users:
@@ -99,6 +101,16 @@ async def query(
                         if attr in userdata["users"][pkey]:
                             force_prim_key = pkey
                             query_values = userdata["users"][pkey][attr]
+                            logger.debug("%s (%s) - (%s) - use_result matched: pkey=%s attr=%s query_values=%s", s, timer(), query_name, pkey, attr, query_values)
+                        else:
+                            logger.debug("%s (%s) - (%s) - use_result not matched", s, timer(), query_name)
+                    else:
+                        logger.debug("%s (%s) - (%s) - use_result not matched", s, timer(), query_name)
+                elif query_config.get("use_result"):
+                    logger.debug("%s (%s) - (%s) - use_result not matched", s, timer(), query_name)
+
+                logger.debug("%s (%s) - (%s) - new query key %s (%s)", s, timer(), query_name, query_values, type(query_values))
+
                 # When use_result resolved new query_values, rebuild user
                 # fields so query_replace substitution picks them up.
                 if force_prim_key is not False:
@@ -145,12 +157,14 @@ async def query(
                             sql = sql.replace(placeholder, "%s")
                             params.extend([val] * occurrences)
 
+                logger.info("%s (%s) - (%s) - searching for: %s\n params: %s", s, timer(), query_name, sql, params)
 
                 t0 = timeit.default_timer()
                 try:
                     async with conn.cursor(aiomysql.DictCursor) as cur:
                         await cur.execute(sql, params)
                         search = await cur.fetchall()
+                        logger.info("%s (%s) - (%s) - cursor descr: %s", s, timer(), query_name, cur.description)
                 except aiomysql.Error as exc:
                     logger.exception("%s (%s) - (%s) - aiomysql.Error: %s", s, timer(), query_name, exc)
                     error = "500 MySQL query error"
@@ -158,11 +172,14 @@ async def query(
 
                 elapsed = timeit.default_timer() - t0
                 stats.update_query_stats(query_name, elapsed)
+                logger.info("%s (%s) - (%s) - mysql query took %.5fs", s, timer(), query_name, elapsed)
 
                 for entry in search:
                     pk, entries = translate_entries(s, query_config, entry, cfg, force_prim_key)
                     user_to_pkey[u["username"]] = pk
                     userdata = merge_userdata(s, pk, entries, userdata)
+
+                logger.debug("%s (%s) - (%s) - after search: %s", s, timer(), query_name, u)
 
     except Exception as exc:
         logger.exception("%s (%s) - (%s) - pool error: %s", s, timer(), query_name, exc)

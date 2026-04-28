@@ -85,6 +85,8 @@ async def query(
 
     query_config = queries[query_name]
 
+    logger.debug("%s (%s) - (%s) - query users: %s", s, timer(), query_name, users)
+
     try:
         async with _pools[query_name].spawn() as conn:
             for u in users:
@@ -98,6 +100,16 @@ async def query(
                         if attr in userdata["users"][pkey]:
                             force_prim_key = pkey
                             query_values = userdata["users"][pkey][attr]
+                            logger.debug("%s (%s) - (%s) - use_result matched: pkey=%s attr=%s query_values=%s", s, timer(), query_name, pkey, attr, query_values)
+                        else:
+                            logger.debug("%s (%s) - (%s) - use_result not matched", s, timer(), query_name)
+                    else:
+                        logger.debug("%s (%s) - (%s) - use_result not matched", s, timer(), query_name)
+                elif query_config.get("use_result"):
+                    logger.debug("%s (%s) - (%s) - use_result not matched", s, timer(), query_name)
+
+                logger.debug("%s (%s) - (%s) - new query key %s (%s)", s, timer(), query_name, query_values, type(query_values))
+
                 # When use_result resolved new query_values, rebuild user
                 # fields so search_filter_replace substitution picks them up.
                 if force_prim_key is not False:
@@ -113,10 +125,12 @@ async def query(
                 if isinstance(query_config.get("search_filter_replace"), dict):
                     for r, field in query_config["search_filter_replace"].items():
                         if field in u:
-                            vals = split_values_into_list(s, query_values, cfg=cfg)
+                            vals = split_values_into_list(s, u[field], cfg=cfg)
                             ldap_filter = ldap_filter.replace(
                                 r, bonsai.escape_filter_exp(vals[0])
                             )
+
+                logger.info("%s (%s) - (%s) - searching for: %s base_dn=%s", s, timer(), query_name, ldap_filter, query_config.get("base_dn"))
 
                 attr_list = query_config.get("attr_list")
                 t0 = timeit.default_timer()
@@ -134,11 +148,14 @@ async def query(
 
                 elapsed = timeit.default_timer() - t0
                 stats.update_query_stats(query_name, elapsed)
+                logger.info("%s (%s) - (%s) - ldap query took %.5fs, results: %d", s, timer(), query_name, elapsed, len(search))
 
                 for entry in search:
                     pk, entries = translate_entries(s, query_config, entry, cfg, force_prim_key)
                     user_to_pkey[u["username"]] = pk
                     userdata = merge_userdata(s, pk, entries, userdata)
+
+                logger.debug("%s (%s) - (%s) - after search: %s", s, timer(), query_name, u)
 
     except (bonsai.errors.LDAPError, bonsai.errors.AuthenticationError, Exception) as exc:
         logger.exception("%s (%s) - (%s) - connection error: %s", s, timer(), query_name, exc)

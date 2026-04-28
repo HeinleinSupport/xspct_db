@@ -41,6 +41,8 @@ async def query(
 
     search_filter_set = set(query_config.get("search_filter", []))
 
+    logger.debug("%s (%s) - (%s) - query users: %s", s, timer(), query_name, users)
+
     try:
         for u in users:
             query_values = u["username"]
@@ -53,6 +55,16 @@ async def query(
                     if attr in userdata["users"][pkey]:
                         force_prim_key = pkey
                         query_values = userdata["users"][pkey][attr]
+                        logger.debug("%s (%s) - (%s) - use_result matched: pkey=%s attr=%s query_values=%s", s, timer(), query_name, pkey, attr, query_values)
+                    else:
+                        logger.debug("%s (%s) - (%s) - use_result not matched", s, timer(), query_name)
+                else:
+                    logger.debug("%s (%s) - (%s) - use_result not matched", s, timer(), query_name)
+            elif query_config.get("use_result"):
+                logger.debug("%s (%s) - (%s) - use_result not matched", s, timer(), query_name)
+
+            logger.debug("%s (%s) - (%s) - new query key %s (%s)", s, timer(), query_name, query_values, type(query_values))
+            logger.info("%s (%s) - (%s) - searching for: %s", s, timer(), query_name, query_values)
 
             yaml_keys: list[str] = []
             if yaml_data:
@@ -68,6 +80,8 @@ async def query(
                                 ):
                                     yaml_keys.append(dk)
 
+            logger.debug("%s (%s) - (%s) - yaml_keys found: %s", s, timer(), query_name, yaml_keys)
+
             for yk in yaml_keys:
                 if yk in yaml_data:
                     primary_key, entries = translate_entries(
@@ -75,6 +89,8 @@ async def query(
                     )
                     user_to_pkey[u["username"]] = primary_key
                     userdata = merge_userdata(s, primary_key, entries, userdata)
+
+            logger.debug("%s (%s) - (%s) - after search: %s", s, timer(), query_name, u)
 
     except Exception as exc:
         logger.exception("%s (%s) - (%s) - Exception: %s", s, timer(), query_name, exc)
