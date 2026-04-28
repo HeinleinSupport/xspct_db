@@ -69,6 +69,7 @@ DEFAULTS: dict[str, Any] = {
         "max_errors": 2,
     },
     "xspct_db_yaml_data": {},
+    "xspct_db_rspamd_alias_fields": ["aliases"],
 }
 
 # Keys whose sub-dicts are deep-merged instead of replaced wholesale.

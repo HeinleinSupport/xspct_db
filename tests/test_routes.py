@@ -143,7 +143,8 @@ async def test_rspamd_settings_with_body(yaml_app_client):
     assert "settings_extra_data" in data
     # alice should be found; nobody should not appear or be empty
     extra = data["settings_extra_data"]
-    assert any("alice" in str(v) for v in extra.values())
+    assert "users" in extra
+    assert any("alice" in str(v) for v in extra["users"].values())
 
 
 async def test_rspamd_settings_deduplication(yaml_app_client):
@@ -159,5 +160,5 @@ async def test_rspamd_settings_deduplication(yaml_app_client):
     assert resp.status == 200
     data = json.loads(await resp.text())
     # alice must appear at most once in settings_extra_data
-    alice_keys = [k for k in data["settings_extra_data"] if "alice" in k]
+    alice_keys = [k for k in data["settings_extra_data"].get("users", {}) if "alice" in k]
     assert len(alice_keys) <= 1

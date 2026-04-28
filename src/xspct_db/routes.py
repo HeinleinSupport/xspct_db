@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 import logging
@@ -27,6 +28,49 @@ from xspct_db.schemas import (
 from xspct_db.utils import add_rspamd_id, generate_session_id, timer
 
 logger = logging.getLogger(__name__)
+
+
+def _build_settings_extra_data(
+    userdata: dict[str, Any],
+    cfg: dict[str, Any],
+) -> dict[str, Any]:
+    """Build the structured ``settings_extra_data`` block.
+
+    Returns ``{"users": {...}, "aliases": {...}}`` where ``aliases`` is a
+    reverse map of alias-value → primary-key, built from the fields named in
+    ``xspct_db_rspamd_alias_fields``.  Returns ``{}`` when no users were found.
+    """
+    users = userdata.get("users", {})
+    if not users:
+        return {}
+    alias_fields: list[str] = cfg.get("xspct_db_rspamd_alias_fields", ["aliases"])
+    aliases: dict[str, str] = {}
+    for pkey, udata in users.items():
+        for field in alias_fields:
+            for val in udata.get(field, []):
+                if val != pkey:
+                    aliases[val] = pkey
+    return {"users": users, "aliases": aliases}
+
+
+def _parse_body(raw: bytes) -> Any:
+    """Return a parsed object from *raw* bytes.
+
+    Tries JSON first; falls back to ``ast.literal_eval`` to handle the case
+    where aiohttp_pydantic has cached the body as a Python-repr string
+    (single-quoted dict) instead of the original JSON bytes.
+    """
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except Exception:
+        pass
+    try:
+        return ast.literal_eval(raw.decode(errors="replace"))
+    except Exception:
+        pass
+    return raw.decode(errors="replace")
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +311,7 @@ class QueryView(PydanticView):
         user_parts = user.split("@", 1)
         users = [{
             "username": user,
+            "address": user,
             "userpart": user_parts[0],
             "domain": user_parts[-1],
         }]
@@ -347,10 +392,7 @@ class QueryJsonView(PydanticView):
         s = add_rspamd_id(s_id, self.request.headers.get(cfg["xspct_db_rspamd_header"]))
 
         raw_body = await self.request.read()
-        try:
-            parsed_body: Any = json.loads(raw_body) if raw_body else None
-        except Exception:
-            parsed_body = raw_body.decode() if raw_body else None
+        parsed_body: Any = _parse_body(raw_body)
 
         query_req = QueryJsonRequest.model_validate(
             parsed_body if isinstance(parsed_body, dict) else {}
@@ -363,6 +405,7 @@ class QueryJsonView(PydanticView):
 
         users = [{
             "username": u,
+            "address": u,
             "userpart": u.split("@", 1)[0],
             "domain": u.split("@", 1)[-1],
         } for u in query_req.users]
@@ -419,16 +462,25 @@ class RspamdSettingsView(PydanticView):
         cfg: dict[str, Any] = self.request.app["config"]
         s_id = generate_session_id()
 
-        # Read and parse body first so uid is available for the session tag
+        # Read and parse body first so uid is available for the session tag.
         raw_body = await self.request.read()
-        try:
-            parsed_body: Any = json.loads(raw_body) if raw_body else None
-        except Exception:
-            parsed_body = raw_body.decode() if raw_body else None
+        parsed_body: Any = _parse_body(raw_body)
 
-        rspamd_req = RspamdSettingsRequest.model_validate(
-            parsed_body if isinstance(parsed_body, dict) else {}
-        )
+        # Construct the model explicitly from the parsed dict to avoid any
+        # alias-resolution issues caused by aiohttp_pydantic's model introspection.
+        if isinstance(parsed_body, dict):
+            rspamd_req = RspamdSettingsRequest(
+                uid=parsed_body.get("uid", ""),
+                from_addr=parsed_body.get("from", ""),
+                rcpts=parsed_body.get("rcpts", []),
+                mta_name=parsed_body.get("mta-name"),
+                mta_host=parsed_body.get("mta-host"),
+                ip=parsed_body.get("ip"),
+                settings_name=parsed_body.get("settings-name"),
+                settings_id=parsed_body.get("settings-id"),
+            )
+        else:
+            rspamd_req = RspamdSettingsRequest()
 
         # Prefer uid from body, fall back to X-Rspamd-ID header
         rspamd_id = rspamd_req.uid or self.request.headers.get(cfg["xspct_db_rspamd_header"])
@@ -450,6 +502,7 @@ class RspamdSettingsView(PydanticView):
             from xspct_db.backends import run_queries
             users = [{
                 "username": addr,
+                "address": addr,
                 "userpart": addr.split("@", 1)[0],
                 "domain": addr.split("@", 1)[-1],
             } for addr in addresses]
@@ -461,7 +514,7 @@ class RspamdSettingsView(PydanticView):
             actions={"reject": 15, "greylist": 8, "add header": 13},
             symbols_disabled=["DKIM_SIGNED"],
             symbols=["SETTINGS_API_TEST_RESPONSE"],
-            settings_extra_data=userdata["users"],
+            settings_extra_data=_build_settings_extra_data(userdata, cfg),
             settings_error=[],
         )
         return _log_response(s, web.json_response(reply.model_dump(exclude_none=True), headers={"Connection": "Keep-Alive"}))
