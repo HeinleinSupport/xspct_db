@@ -3,8 +3,8 @@
 A multi-backend database query service with two-layer caching and Rspamd integration.
 
 Provides an async HTTP API (aiohttp) for querying user data from LDAP, MySQL, and YAML backends,
-with an in-process L1 `TTLCache` and optional Redis (L2) caching, API-key authentication,
-Prometheus metrics, and TLS support.
+with a two-layer object cache (in-process L1 `TTLCache` + optional Redis L2), a response-level
+cache for batch POST endpoints, API-key authentication, Prometheus metrics, and TLS support.
 
 ## Installation
 
@@ -59,6 +59,22 @@ See [docs/guide/api.md](docs/guide/api.md) for request/response details and all 
 | `delay` | — | Artificial-delay backend for testing |
 | `ldap` | `[ldap]` | LDAP via bonsai with connection pooling |
 | `mysql` | `[mysql]` | MySQL via aiomysql with connection pooling |
+
+## Caching
+
+xspct_db has three independent cache layers, all using `TTLCache` from `cachetools`:
+
+| Layer | Config key | Scope |
+|-------|-----------|-------|
+| L1 object cache | `xspct_db_local_cache` | Per-user lookup; zero latency, in-process |
+| L2 object cache | `xspct_db_redis_cache` | Per-user lookup; shared across workers via Redis |
+| Response cache | `xspct_db_response_cache` | Full JSON response body for `POST /v1/query-json` and `POST /v1/rspamd-settings` |
+
+On a `GET /v1/query/{user}` request, lookups flow: L1 → L2 (Redis) → backend.
+On a `POST` request, the response cache is checked first; on a miss the backend is queried
+and the serialised response is stored for reuse.
+
+See [docs/guide/configuration.md](docs/guide/configuration.md) for all options.
 
 ## Development
 

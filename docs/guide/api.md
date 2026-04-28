@@ -31,6 +31,8 @@ Authentication is optional and controlled by `xspct_db_metrics_auth`.
 | `xspct_db_requests_unknown_total` | counter | Requests where the user was not found |
 | `xspct_db_local_cache_hits_total` | counter | L1 in-process cache hits |
 | `xspct_db_local_cache_misses_total` | counter | L1 in-process cache misses |
+| `xspct_db_response_cache_hits_total` | counter | Response cache hits (query-json / rspamd-settings) |
+| `xspct_db_response_cache_misses_total` | counter | Response cache misses |
 | `xspct_db_redis_hits_total` | counter | Positive Redis cache hits |
 | `xspct_db_redis_misses_total` | counter | Redis cache misses |
 | `xspct_db_redis_negative_hits_total` | counter | Negative cache hits |
@@ -82,7 +84,9 @@ Returns `504` when a per-request timeout is exceeded.
 ### `POST /v1/query-json`
 
 Batch lookup for multiple users in a single request.
-Redis cache is **not** consulted or populated for batch requests.
+The response cache (`xspct_db_response_cache`) is consulted first when enabled; on a miss the
+result is stored for subsequent identical requests.
+Redis (L2) is **not** consulted or populated for batch requests.
 
 **Authentication:** `X-Api-Key` header
 
@@ -120,6 +124,9 @@ Returns `500` on backend errors.
 ### `POST /v1/rspamd-settings`
 
 Returns an Rspamd settings blob for use with the Rspamd HTTP settings module.
+The response cache (`xspct_db_response_cache`) is consulted first when enabled; on a miss the
+result is stored for subsequent identical requests.  The cache key is built from the fields
+listed in `xspct_db_response_cache.rspamd_key_fields`.
 
 **Authentication:** `X-Api-Key` header
 

@@ -41,6 +41,12 @@ pyproject.toml         # Build metadata (hatchling)
 - **Async**: all I/O code uses `async`/`await`; tests use `pytest-asyncio`.
 - **New backends** must subclass `backends.base.BaseBackend` and follow the existing lookup/close pattern.
 - **Dependencies**: core deps in `[project.dependencies]`; optional extras (`ldap`, `mysql`, `redis`, `uvloop`, `all`) in `[project.optional-dependencies]`.
+- **Cache config**:
+  - L1 object cache (TTLCache): `xspct_db_local_cache`
+  - L2 object cache (Redis): `xspct_db_redis_cache`
+  - Response cache (TTLCache for POST response bytes): `xspct_db_response_cache`
+  - Do NOT mix keys between these dicts.
+- **Test email addresses** must use `@mailexample.de`. Do not use any other domain in tests.
 
 ## Constraints
 

@@ -66,6 +66,24 @@ xspct_db_local_cache:
   max_entries: 10000   # maximum entries per cache bucket
 
 # ---------------------------------------------------------------------------
+# Response cache — L1 TTLCache for pre-serialised POST responses
+# Caches the full JSON response body for /v1/query-json and
+# /v1/rspamd-settings; served without hitting any backend.
+# ---------------------------------------------------------------------------
+xspct_db_response_cache:
+  enabled: true
+  expire: 10           # TTL for cached responses (seconds)
+  max_entries: 5000    # maximum number of cached responses
+  # Fields of the rspamd-settings request used to build the cache key.
+  # Remove fields that are always unique (e.g. settings-id) to improve hit rate.
+  rspamd_key_fields:
+    - from
+    - rcpts
+    - mta-name
+    - settings-name
+    - settings-id
+
+# ---------------------------------------------------------------------------
 # L2 cache — Redis (optional)
 # Install the redis extra:  pip install "xspct_db[redis]"
 # ---------------------------------------------------------------------------

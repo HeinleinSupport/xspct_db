@@ -55,7 +55,10 @@ Legacy path prefixes (`/query/v1/{user}`, `/query-json/v1`, `/rspamd-settings/v1
 - **Async first** — all I/O uses `async`/`await`; tests use `pytest-asyncio` with `asyncio_mode = "auto"`.
 - **New backends** subclass `backends.base.BaseBackend`; use `dummy.py` as the minimal skeleton.
 - **Rspamd protocol** — the `text/plain; version=0.0.4` content-type in `routes.py` is protocol-mandated; do not change it.
-- **Cache config** — L1 (in-process `TTLCache`) is configured under `xspct_db_local_cache`; L2 (Redis) is configured under `xspct_db_redis_cache`. Do not mix keys between these dicts.
+- **Cache config** — three separate top-level dicts; do not mix keys between them:
+  - `xspct_db_local_cache` — L1 in-process `TTLCache` for object lookups (enabled by default)
+  - `xspct_db_redis_cache` — L2 Redis cache for object lookups (optional)
+  - `xspct_db_response_cache` — L1 `TTLCache` for full JSON response bytes for `POST /v1/query-json` and `POST /v1/rspamd-settings` (enabled by default)
 
 ## Constraints
 

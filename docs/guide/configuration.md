@@ -78,6 +78,36 @@ When both L1 and Redis (L2) are enabled, a lookup follows this order:
 
 Disabling L1 (`enabled: false`) falls through directly to Redis or the backend on every request.
 
+## Response Cache
+
+xspct_db can cache the full serialised JSON response body for `POST /v1/query-json` and
+`POST /v1/rspamd-settings` in a dedicated in-process `TTLCache`.  Unlike the object cache,
+this layer operates on the **response level** — the backend is not called at all on a cache hit.
+
+```yaml
+xspct_db_response_cache:
+  enabled: true
+  expire: 10           # TTL for cached responses (seconds)
+  max_entries: 5000    # maximum number of cached responses
+  # Fields of the rspamd-settings request used to build the cache key.
+  # Removing fields that are always unique (e.g. settings-id) improves hit rate.
+  rspamd_key_fields:
+    - from
+    - rcpts
+    - mta-name
+    - settings-name
+    - settings-id
+```
+
+**Cache key construction:**
+
+- `/v1/query-json` — keyed by the frozen set of user addresses in the request.
+  Two requests with the same users in different order produce the same cache key.
+- `/v1/rspamd-settings` — keyed by the fields listed in `rspamd_key_fields`.
+  `rcpts` is stored as a `frozenset` so order does not matter.
+
+Set `enabled: false` to disable the response cache entirely.
+
 ## Redis Cache
 
 ```yaml
