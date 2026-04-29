@@ -30,9 +30,10 @@ xspct-db /etc/xspct-db.yml
 python -m xspct_db /etc/xspct-db.yml
 ```
 
-Configuration is a single YAML file. An annotated example is provided in
-[example-config.yml](example-config.yml); see
-[docs/guide/configuration.md](docs/guide/configuration.md) for the full reference.
+Configuration is a single YAML file. All keys are optional; see
+[docs/guide/configuration.md](docs/guide/configuration.md) for the full reference,
+including examples for [multiple databases with result merging](docs/guide/configuration.md#multiple-databases-and-result-merging)
+and [chained queries with `use_result`](docs/guide/configuration.md#use_result--chained-queries).
 
 ## HTTP API
 

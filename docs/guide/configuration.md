@@ -138,6 +138,16 @@ The `db_type` key selects the backend.
 
 ### YAML backend
 
+Static data embedded directly in the configuration file.  Useful for small, rarely-changing
+datasets such as service accounts, shared mailboxes, or test fixtures.
+
+`search_filter` names the fields that are scanned when searching by alias.
+`primary_key` is the field whose value becomes the key in the `users` response dict.
+`attr_list: ["*"]` returns all fields; set it to a specific list to filter attributes.
+
+`yaml_root` (optional) lets a single `xspct_db_yaml_data` tree serve multiple query entries by
+naming a different top-level key.  Defaults to the query name.
+
 ```yaml
 xspct_db_queries:
   users:
@@ -145,14 +155,71 @@ xspct_db_queries:
     primary_key: mail
     attr_list: ["*"]
     search_filter: [mail, aliases]
+    # yaml_root: users  # default: same as the query name
 
 xspct_db_yaml_data:
   users:
     alice@mailexample.de:
       mail: alice@mailexample.de
       uid: alice
-      aliases: [a@mailexample.de]
+      aliases: [a@mailexample.de, alice.smith@mailexample.de]
+    bob@mailexample.de:
+      mail: bob@mailexample.de
+      uid: bob
+      aliases: []
 ```
+
+### Dummy backend
+
+The dummy backend returns a minimal synthetic object for every queried address without
+consulting any real data source.  Each result contains the address as `uid` and a static
+`comment` field.
+
+Use it as a health-check backend, as a placeholder while a real backend is being set up,
+or as a no-op stand-in in development.
+
+```yaml
+xspct_db_queries:
+  noop:
+    db_type: dummy
+```
+
+### Delay backend
+
+The delay backend sleeps for a configurable duration and then returns the unchanged result.
+It is intended for **testing timeout and background-continuation behaviour**: combine it with
+`xspct_db_request_timeout` set to a value lower than `delay` to reliably trigger 504 responses
+and exercise the background-slot path.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `delay` | `1.0` | Seconds to sleep before returning |
+
+```yaml
+xspct_db_request_timeout: 1   # return 504 after 1 second
+
+xspct_db_queries:
+  slow_backend:
+    db_type: delay
+    delay: 3.0    # always exceeds the timeout → 504 / background continuation
+```
+
+When `xspct_db_background_slots` is greater than `0` the query keeps running after the 504 is
+sent and will warm the cache for the next request once it completes.
+
+### Error backend
+
+The error backend immediately returns a `500` error string without doing any work.  Use it
+to verify that your monitoring, alerting, and caller error-handling all behave correctly when
+a backend is unavailable.
+
+```yaml
+xspct_db_queries:
+  always_fails:
+    db_type: error
+```
+
+Any request that reaches this query will receive a `500 Internal Server Error` response.
 
 ### LDAP backend
 
@@ -233,4 +300,274 @@ xspct_db_key_translation:
 # Split string values on a delimiter
 xspct_db_value_split:
   aliases: ","
+```
+
+---
+
+## Multiple Databases and Result Merging
+
+More than one query can be defined under `xspct_db_queries`.  All queries are executed in the
+order they appear in the config file.  Results from each backend are **merged** into the same
+`users` dict using `dict_merge`: scalar values are promoted to lists and lists are extended, so
+attributes that appear in multiple backends are combined rather than overwritten.
+
+### Parallel LDAP + MySQL lookup (merging)
+
+This setup queries an LDAP directory for basic user attributes and a MySQL database for
+additional quota/policy attributes.  Because both backends store the user under the same primary
+key (`mail`), the results are automatically merged into a single user object.
+
+```yaml
+xspct_db_queries:
+
+  # Backend 1 – LDAP directory (user identity attributes)
+  ldap_users:
+    db_type: ldap
+    server: ldap://ldap.example.com
+    bind_dn: cn=reader,dc=example,dc=com
+    bind_dn_pw: secret
+    base_dn: ou=users,dc=example,dc=com
+    search_filter: "(mail={MAIL})"
+    search_filter_replace:
+      "{MAIL}": username
+    primary_key: mail
+    attr_list: [mail, uid, cn, aliases]
+
+  # Backend 2 – MySQL policy database (quota attributes)
+  mysql_policy:
+    db_type: mysql
+    host: 127.0.0.1
+    port: 3306
+    user: xspct
+    password: secret
+    db: maildb
+    query: "SELECT mail, quota, active FROM users WHERE mail = '{MAIL}'"
+    query_replace:
+      "{MAIL}": username
+    primary_key: mail
+    pool_minconn: 1
+    pool_maxconn: 10
+```
+
+A lookup for `alice@example.com` queries both backends and returns a merged response:
+
+```json
+{
+  "users": {
+    "alice@example.com": {
+      "mail": "alice@example.com",
+      "uid": "alice",
+      "cn": "Alice Example",
+      "aliases": ["a.example@example.com"],
+      "quota": "2048M",
+      "active": "1"
+    }
+  }
+}
+```
+
+---
+
+## `use_result` — Chained Queries
+
+`use_result` chains a second query that uses an **attribute from a previous query result**
+as its search value instead of the original email address.  This is the standard pattern for
+resolving domain- or group-level attributes after a per-user lookup.
+
+Without `use_result` the second query would search for the user's email address in the second
+backend, which typically doesn't contain per-user rows there.
+With `use_result` it uses a field from the first result (e.g. a group DN or a domain name) as
+the search key for the second backend.
+
+### Required per-query keys
+
+| Key | Description |
+|-----|-------------|
+| `use_result: true` | Enable chained-query mode for this query |
+| `result_object_attr` | Attribute from the **previous** result whose value is used as the new search key |
+
+### Example: LDAP user lookup → LDAP domain policy lookup
+
+```yaml
+xspct_db_queries:
+
+  # Step 1 – resolve the user; result includes a `domain` attribute
+  ldap_users:
+    db_type: ldap
+    server: ldap://ldap.example.com
+    bind_dn: cn=reader,dc=example,dc=com
+    bind_dn_pw: secret
+    base_dn: ou=users,dc=example,dc=com
+    search_filter: "(mail={MAIL})"
+    search_filter_replace:
+      "{MAIL}": username
+    primary_key: mail
+    attr_list: [mail, uid, cn, domain, aliases]
+
+  # Step 2 – use the `domain` attribute from step 1 to query domain policies
+  ldap_domains:
+    db_type: ldap
+    server: ldap://ldap.example.com
+    bind_dn: cn=reader,dc=example,dc=com
+    bind_dn_pw: secret
+    base_dn: ou=domains,dc=example,dc=com
+    search_filter: "(domainName={DOMAIN})"
+    search_filter_replace:
+      "{DOMAIN}": username
+    primary_key: mail        # keep the user's mail as primary key so results merge
+    attr_list: [domainName, quota_default, reject_score]
+    use_result: true         # don't search by email; use a prior result attribute instead
+    result_object_attr: domain  # read the `domain` field from the step-1 result
+```
+
+**How it works:**
+
+1. `ldap_users` runs first and finds `alice@example.com`.  Her result contains
+   `domain: example.com`.
+2. `ldap_domains` sees `use_result: true` and looks up `example.com` in the domains tree
+   rather than `alice@example.com`.
+3. The domain attributes are merged into Alice's existing user object.
+
+Resulting response:
+
+```json
+{
+  "users": {
+    "alice@example.com": {
+      "mail": "alice@example.com",
+      "uid": "alice",
+      "cn": "Alice Example",
+      "domain": "example.com",
+      "aliases": ["a.example@example.com"],
+      "domainName": "example.com",
+      "quota_default": "1024M",
+      "reject_score": "15"
+    }
+  }
+}
+```
+
+If the first query does not find the user (no `domain` attribute to read), or if the user is
+not found in `user_to_pkey`, the chained query is skipped silently for that address.
+
+### Example: MySQL user lookup → MySQL domain defaults
+
+```yaml
+xspct_db_queries:
+
+  # Step 1 – per-user row; includes a domain FK column
+  mysql_users:
+    db_type: mysql
+    host: 127.0.0.1
+    port: 3306
+    user: xspct
+    password: secret
+    db: maildb
+    query: "SELECT mail, uid, domain FROM users WHERE mail = '{MAIL}'"
+    query_replace:
+      "{MAIL}": username
+    primary_key: mail
+    pool_minconn: 1
+    pool_maxconn: 20
+
+  # Step 2 – per-domain row; keyed on the domain name from step 1
+  mysql_domains:
+    db_type: mysql
+    host: 127.0.0.1
+    port: 3306
+    user: xspct
+    password: secret
+    db: maildb
+    query: "SELECT domain, quota_default, reject_score FROM domains WHERE domain = '{DOMAIN}'"
+    query_replace:
+      "{DOMAIN}": username
+    primary_key: mail        # keep the user's mail as primary key so results merge
+    pool_minconn: 1
+    pool_maxconn: 5
+    use_result: true
+    result_object_attr: domain
+```
+
+---
+
+## Complete Configuration Example
+
+A production-style configuration combining TLS, Redis cache, LDAP + domain chaining, key
+translation, value splitting, and per-request timeouts:
+
+```yaml
+xspct_db_listen_address: ["0.0.0.0", "::"]
+xspct_db_listen_port: "11350"
+xspct_db_log_level: 20        # INFO
+xspct_db_request_timeout: 5   # return 504 after 5 seconds; continue in background
+
+xspct_db_api_key:
+  - "prod-key-abc123"
+  - "monitoring-key-xyz"
+
+xspct_db_tls:
+  tls_enabled: true
+  tls_cert: /etc/ssl/xspct-db/fullchain.pem
+  tls_key:  /etc/ssl/xspct-db/privkey.pem
+
+xspct_db_local_cache:
+  enabled: true
+  expire: 30
+  expire_negative: 60
+  max_entries: 50000
+
+xspct_db_redis_cache:
+  enabled: true
+  host: redis.internal
+  port: 6379
+  expire: 120
+  expire_negative: 120
+  max_connections: 40
+
+xspct_db_response_cache:
+  enabled: true
+  expire: 15
+  max_entries: 10000
+
+xspct_db_queries:
+
+  ldap_users:
+    db_type: ldap
+    server: ldap://ldap.internal
+    bind_dn: cn=xspct,dc=example,dc=com
+    bind_dn_pw: secret
+    base_dn: ou=users,dc=example,dc=com
+    search_filter: "(|(mail={MAIL})(mailAlias={MAIL}))"
+    search_filter_replace:
+      "{MAIL}": username
+    primary_key: mail
+    attr_list: [mail, uid, cn, domain, mailAlias, quota]
+    pool_minconn: 2
+    pool_maxconn: 20
+
+  ldap_domains:
+    db_type: ldap
+    server: ldap://ldap.internal
+    bind_dn: cn=xspct,dc=example,dc=com
+    bind_dn_pw: secret
+    base_dn: ou=domains,dc=example,dc=com
+    search_filter: "(domainName={DOMAIN})"
+    search_filter_replace:
+      "{DOMAIN}": username
+    primary_key: mail
+    attr_list: [domainName, quota_default, reject_score, greylist_score]
+    pool_minconn: 1
+    pool_maxconn: 5
+    use_result: true
+    result_object_attr: domain
+
+xspct_db_key_translation:
+  mailAlias: aliases
+  cn: displayname
+
+xspct_db_value_split:
+  aliases: ","
+
+xspct_db_rspamd_alias_fields:
+  - aliases
 ```
