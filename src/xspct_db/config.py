@@ -87,7 +87,13 @@ DEFAULTS: dict[str, Any] = {
 }
 
 # Keys whose sub-dicts are deep-merged instead of replaced wholesale.
-_DEEP_MERGE_KEYS = ("xspct_db_redis_cache", "xspct_db_tls", "xspct_db_metrics_auth", "xspct_db_local_cache", "xspct_db_response_cache")
+_DEEP_MERGE_KEYS = (
+    "xspct_db_redis_cache",
+    "xspct_db_tls",
+    "xspct_db_metrics_auth",
+    "xspct_db_local_cache",
+    "xspct_db_response_cache",
+)
 
 
 def load(config_path: str) -> dict[str, Any]:

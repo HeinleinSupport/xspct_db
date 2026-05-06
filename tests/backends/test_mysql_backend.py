@@ -38,8 +38,18 @@ MYSQL_CFG: dict[str, Any] = {
     "xspct_db_mysql_pool_maxconn": 5,
 }
 
-_USER_A = {"username": "alice@mailexample.de", "address": "alice@mailexample.de", "userpart": "alice", "domain": "mailexample.de"}
-_USER_B = {"username": "bob@mailexample.de", "address": "bob@mailexample.de", "userpart": "bob", "domain": "mailexample.de"}
+_USER_A = {
+    "username": "alice@mailexample.de",
+    "address": "alice@mailexample.de",
+    "userpart": "alice",
+    "domain": "mailexample.de",
+}
+_USER_B = {
+    "username": "bob@mailexample.de",
+    "address": "bob@mailexample.de",
+    "userpart": "bob",
+    "domain": "mailexample.de",
+}
 
 
 # ---------------------------------------------------------------------------

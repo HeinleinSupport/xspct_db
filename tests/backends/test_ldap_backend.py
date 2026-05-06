@@ -244,8 +244,18 @@ async def test_query_multiple_users_batched():
         },
     }
     users = [
-        {"username": "alice@mailexample.de", "address": "alice@mailexample.de", "userpart": "alice", "domain": "mailexample.de"},
-        {"username": "bob@mailexample.de", "address": "bob@mailexample.de", "userpart": "bob", "domain": "mailexample.de"},
+        {
+            "username": "alice@mailexample.de",
+            "address": "alice@mailexample.de",
+            "userpart": "alice",
+            "domain": "mailexample.de",
+        },
+        {
+            "username": "bob@mailexample.de",
+            "address": "bob@mailexample.de",
+            "userpart": "bob",
+            "domain": "mailexample.de",
+        },
     ]
 
     with pytest.MonkeyPatch().context() as mp:
