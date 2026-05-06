@@ -130,6 +130,7 @@ JSON and msgpack responses for the same user set are cached under separate keys.
 ```
 
 Users not found in any backend are returned with an empty dict.
+Returns `400 Bad Request` when the user list exceeds `xspct_db_query_json_max_users` (default 500).
 Returns `401 Unauthorized` on bad/missing API key.
 Returns `500` on backend errors.
 Returns `503 Service Overloaded` when all foreground query slots are busy.

@@ -19,8 +19,11 @@ All keys are optional; unspecified keys fall back to the defaults shown below.
 | `xspct_db_log_prefix` | `"Xspct_DB"` | String prepended to log messages |
 | `xspct_db_request_timeout` | `0` | Per-request timeout in seconds; `0` = disabled |
 | `xspct_db_request_timeout_header` | `""` | Header name to read per-request timeout from |
+| `xspct_db_request_timeout_header_max` | `120` | Maximum timeout (seconds) accepted from the timeout header; values ≤ 0 are ignored |
 | `xspct_db_foreground_slots` | `30` | Maximum concurrent foreground (client-blocking) queries |
 | `xspct_db_background_slots` | `5` | Maximum concurrent background queries after a timeout |
+| `xspct_db_client_max_size` | `1048576` | Maximum accepted request body size in bytes (default 1 MiB) |
+| `xspct_db_query_json_max_users` | `500` | Maximum number of users accepted in a single `POST /v1/query-json` request |
 
 ## Authentication
 
@@ -28,7 +31,7 @@ All keys are optional; unspecified keys fall back to the defaults shown below.
 |-----|---------|-------------|
 | `xspct_db_api_header` | `"X-Api-Key"` | HTTP header carrying the API key |
 | `xspct_db_api_key` | `"changeme"` | Accepted API key or list of keys |
-| `xspct_db_api_key_verify_fail` | `true` | Return `403` on bad key; `false` = allow through |
+| `xspct_db_api_key_verify_fail` | `true` | Return `401` on bad key; `false` = allow through (permissive mode — logs a WARNING at startup) |
 | `xspct_db_rspamd_header` | `"X-Rspamd-ID"` | Header used to propagate the Rspamd request ID |
 
 ## TLS
@@ -103,7 +106,7 @@ xspct_db_response_cache:
 
 **Cache key construction:**
 
-- `/v1/query-json` — keyed by the frozen set of user addresses in the request.
+- `/v1/query-json` — keyed by the sorted tuple of user addresses in the request.
   Two requests with the same users in different order produce the same cache key.
 - `/v1/rspamd-settings` — keyed by the fields listed in `rspamd_key_fields`.
   `rcpts` is stored as a `frozenset` so order does not matter.
