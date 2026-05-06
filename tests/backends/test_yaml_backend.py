@@ -56,6 +56,25 @@ async def test_yaml_alias_lookup():
     assert len(ud["users"]) == 1
 
 
+async def test_yaml_scalar_search_filter_lookup():
+    cfg = _cfg(
+        {
+            "alice@mailexample.de": {
+                "mail": "alice@mailexample.de",
+                "uid": "alice",
+                "aliases": ["a@mailexample.de"],
+            },
+        }
+    )
+    cfg["xspct_db_queries"]["users"]["search_filter"] = ["uid"]
+
+    users = [{"username": "alice"}]
+    ud, pkey, err = await query("s", "users", users, {"users": {}}, {}, cfg)
+    assert err is False
+    assert len(ud["users"]) == 1
+    assert "alice@mailexample.de" in ud["users"]
+
+
 async def test_yaml_invalid_query_name():
     users = [{"username": "alice@mailexample.de"}]
     _, _, err = await query("s", "nonexistent", users, {"users": {}}, {}, _cfg())
