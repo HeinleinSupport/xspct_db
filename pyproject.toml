@@ -48,6 +48,9 @@ mysql = [
 redis = [
   "redis>=5.0",
 ]
+msgpack = [
+  "msgpack>=1.0",
+]
 uvloop = [
   "uvloop>=0.19",
 ]
@@ -55,6 +58,7 @@ all = [
   "bonsai>=1.5",
   "aiomysql>=0.2",
   "redis>=5.0",
+  "msgpack>=1.0",
   "uvloop>=0.19",
 ]
 dev = [

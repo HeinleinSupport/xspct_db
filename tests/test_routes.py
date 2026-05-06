@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Health / utility
 # ---------------------------------------------------------------------------
@@ -261,3 +263,99 @@ async def test_prometheus_includes_queue_metrics(app_client):
         "xspct_db_background_errors_total",
     ):
         assert metric in body, f"{metric} missing from /metrics output"
+
+
+# ---------------------------------------------------------------------------
+# msgpack encoding
+# ---------------------------------------------------------------------------
+
+msgpack = pytest.importorskip("msgpack", reason="msgpack not installed")
+
+
+async def test_query_json_msgpack_content_type(app_client):
+    """POST /v1/query-json with msgpack body + Content-Type returns msgpack response."""
+    payload = msgpack.packb({"users": ["user@mailexample.de"]}, use_bin_type=True)
+    headers = {"Content-Type": "application/msgpack", "X-Api-Key": "test-key"}
+    resp = await app_client.post("/v1/query-json", data=payload, headers=headers)
+    assert resp.status == 200
+    assert "msgpack" in resp.headers.get("Content-Type", "")
+    data = msgpack.unpackb(await resp.read(), raw=False)
+    assert "users" in data
+
+
+async def test_query_json_accept_msgpack(app_client):
+    """POST /v1/query-json with JSON body + Accept: application/msgpack returns msgpack response."""
+    payload = json.dumps({"users": ["user@mailexample.de"]})
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/msgpack",
+        "X-Api-Key": "test-key",
+    }
+    resp = await app_client.post("/v1/query-json", data=payload, headers=headers)
+    assert resp.status == 200
+    assert "msgpack" in resp.headers.get("Content-Type", "")
+    data = msgpack.unpackb(await resp.read(), raw=False)
+    assert "users" in data
+
+
+async def test_rspamd_settings_msgpack(app_client):
+    """POST /v1/rspamd-settings with msgpack body returns msgpack response."""
+    payload = msgpack.packb({}, use_bin_type=True)
+    headers = {"Content-Type": "application/msgpack", "X-Api-Key": "test-key"}
+    resp = await app_client.post("/v1/rspamd-settings", data=payload, headers=headers)
+    assert resp.status == 200
+    assert "msgpack" in resp.headers.get("Content-Type", "")
+    data = msgpack.unpackb(await resp.read(), raw=False)
+    assert "actions" in data
+    assert "flags" in data
+
+
+async def test_query_get_accept_msgpack(yaml_app_client):
+    """GET /v1/query/{user} with Accept: application/msgpack returns msgpack response."""
+    headers = {"Accept": "application/msgpack", "X-Api-Key": "test-key"}
+    resp = await yaml_app_client.get("/v1/query/alice@mailexample.de", headers=headers)
+    assert resp.status == 200
+    assert "msgpack" in resp.headers.get("Content-Type", "")
+    data = msgpack.unpackb(await resp.read(), raw=False)
+    assert "users" in data
+
+
+async def test_query_json_msgpack_cache_hit(response_cache_app_client):
+    """Second identical msgpack POST /v1/query-json is served from the response cache."""
+    from xspct_db import stats as xstats
+    payload = msgpack.packb({"users": ["alice@mailexample.de"]}, use_bin_type=True)
+    headers = {"Content-Type": "application/msgpack", "X-Api-Key": "test-key"}
+
+    resp1 = await response_cache_app_client.post("/v1/query-json", data=payload, headers=headers)
+    assert resp1.status == 200
+
+    resp2 = await response_cache_app_client.post("/v1/query-json", data=payload, headers=headers)
+    assert resp2.status == 200
+    assert xstats.stats["response_cache_hits"] == 1
+    assert msgpack.unpackb(await resp1.read(), raw=False) == msgpack.unpackb(
+        await resp2.read(), raw=False
+    )
+
+
+async def test_query_json_msgpack_and_json_cache_separate(response_cache_app_client):
+    """msgpack and JSON responses for the same query use separate cache entries."""
+    from xspct_db import stats as xstats
+    users_payload = {"users": ["alice@mailexample.de"]}
+
+    # First: JSON request
+    resp_json = await response_cache_app_client.post(
+        "/v1/query-json",
+        data=json.dumps(users_payload),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp_json.status == 200
+
+    # Second: same users but msgpack request — must be a cache miss (separate key)
+    resp_mp = await response_cache_app_client.post(
+        "/v1/query-json",
+        data=msgpack.packb(users_payload, use_bin_type=True),
+        headers={"Content-Type": "application/msgpack", "X-Api-Key": "test-key"},
+    )
+    assert resp_mp.status == 200
+    # Only the very first request triggered a miss; the second also misses (different fmt key)
+    assert xstats.stats["response_cache_hits"] == 0

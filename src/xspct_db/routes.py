@@ -53,15 +53,29 @@ def _build_settings_extra_data(
     return {"users": users, "aliases": aliases}
 
 
-def _parse_body(raw: bytes) -> Any:
+_MSGPACK_MIMES = frozenset({"application/msgpack", "application/x-msgpack"})
+
+
+def _parse_body(raw: bytes, content_type: str = "") -> Any:
     """Return a parsed object from *raw* bytes.
 
-    Tries JSON first; falls back to ``ast.literal_eval`` to handle the case
-    where aiohttp_pydantic has cached the body as a Python-repr string
-    (single-quoted dict) instead of the original JSON bytes.
+    When *content_type* indicates msgpack (``application/msgpack`` or
+    ``application/x-msgpack``) the body is decoded with :mod:`msgpack`.
+    Falls back to JSON and then ``ast.literal_eval`` to handle the case
+    where aiohttp_pydantic has cached the body as a Python-repr string.
     """
     if not raw:
         return None
+    # Normalise: strip parameters such as "; charset=utf-8"
+    ct = content_type.split(";", 1)[0].strip().lower()
+    if ct in _MSGPACK_MIMES:
+        try:
+            import msgpack  # type: ignore[import-untyped]
+            return msgpack.unpackb(raw, raw=False)
+        except ImportError:
+            pass
+        except Exception:
+            return None
     try:
         return json.loads(raw)
     except Exception:
@@ -71,6 +85,41 @@ def _parse_body(raw: bytes) -> Any:
     except Exception:
         pass
     return raw.decode(errors="replace")
+
+
+def _detect_response_format(request: web.Request) -> str:
+    """Return ``"msgpack"`` or ``"json"`` for the response body encoding.
+
+    The ``Accept`` header takes precedence; if absent or not ``application/msgpack``
+    / ``application/x-msgpack``, the request ``Content-Type`` is mirrored.
+    """
+    accept = request.headers.get("Accept", "")
+    for part in accept.split(","):
+        mime = part.split(";", 1)[0].strip().lower()
+        if mime in _MSGPACK_MIMES:
+            return "msgpack"
+        if mime == "application/json":
+            return "json"
+    ct = request.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+    if ct in _MSGPACK_MIMES:
+        return "msgpack"
+    return "json"
+
+
+def _serialize_body(data: Any, fmt: str) -> tuple[bytes, str]:
+    """Serialise *data* to bytes and return ``(body, content_type)``.
+
+    *fmt* must be ``"json"`` or ``"msgpack"``.
+    Raises :class:`aiohttp.web.HTTPNotAcceptable` (406) when *fmt* is
+    ``"msgpack"`` but :mod:`msgpack` is not installed.
+    """
+    if fmt == "msgpack":
+        try:
+            import msgpack  # type: ignore[import-untyped]
+            return msgpack.packb(data, use_bin_type=True), "application/msgpack"
+        except ImportError:
+            raise web.HTTPNotAcceptable(text="msgpack library not installed")
+    return json.dumps(data).encode(), "application/json"
 
 
 # ---------------------------------------------------------------------------
@@ -393,6 +442,7 @@ class QueryView(PydanticView):
         if not verify_api_key(s, self.request.headers.get(cfg["xspct_db_api_header"]), cfg):
             return _log_response(s, web.Response(status=401, text="401 Unauthorized"))
 
+        fmt = _detect_response_format(self.request)
         user = unquote(user)
         userdata: dict[str, Any] = {"users": {}}
         user_to_pkey: dict[str, Any] = {}
@@ -431,11 +481,17 @@ class QueryView(PydanticView):
         if isinstance(cache_object, dict):
             stats.stats["requests_known"] += 1
             userdata["users"][user] = cache_object
-            return _log_response(s, web.json_response(userdata, headers={"Connection": "Keep-Alive"}))
+            _body, _ctype = _serialize_body(userdata, fmt)
+            return _log_response(s, web.Response(
+                body=_body, content_type=_ctype, headers={"Connection": "Keep-Alive"},
+            ))
 
         if isinstance(cache_object, bool) and not cache_object:
             stats.stats["requests_unknown"] += 1
-            return _log_response(s, web.json_response(userdata, headers={"Connection": "Keep-Alive"}))
+            _body, _ctype = _serialize_body(userdata, fmt)
+            return _log_response(s, web.Response(
+                body=_body, content_type=_ctype, headers={"Connection": "Keep-Alive"},
+            ))
 
         # --- Backend query ---
         user_parts = user.split("@", 1)
@@ -480,7 +536,10 @@ class QueryView(PydanticView):
         else:
             stats.stats["requests_unknown"] += 1
 
-        return _log_response(s, web.json_response(userdata, headers={"Connection": "Keep-Alive"}))
+        _body, _ctype = _serialize_body(userdata, fmt)
+        return _log_response(s, web.Response(
+            body=_body, content_type=_ctype, headers={"Connection": "Keep-Alive"},
+        ))
 
 
 class QueryJsonView(PydanticView):
@@ -534,7 +593,7 @@ class QueryJsonView(PydanticView):
         s = add_rspamd_id(s_id, self.request.headers.get(cfg["xspct_db_rspamd_header"]))
 
         raw_body = await self.request.read()
-        parsed_body: Any = _parse_body(raw_body)
+        parsed_body: Any = _parse_body(raw_body, self.request.headers.get("Content-Type", ""))
 
         query_req = QueryJsonRequest.model_validate(
             parsed_body if isinstance(parsed_body, dict) else {}
@@ -545,14 +604,17 @@ class QueryJsonView(PydanticView):
         if not verify_api_key(s, self.request.headers.get(cfg["xspct_db_api_header"]), cfg):
             return _log_response(s, web.Response(status=401, text="401 Unauthorized"))
 
+        fmt = _detect_response_format(self.request)
+
         # --- Response cache lookup ---
-        response_cache_key = ("query-json", frozenset(query_req.users))
-        cached_body = cache.get_response(response_cache_key, cfg)
-        if cached_body is not None:
+        response_cache_key = ("query-json", frozenset(query_req.users), fmt)
+        cached = cache.get_response(response_cache_key, cfg)
+        if cached is not None:
             stats.stats["response_cache_hits"] += 1
+            cached_body, cached_ctype = cached
             return _log_response(s, web.Response(
                 body=cached_body,
-                content_type="application/json",
+                content_type=cached_ctype,
                 headers={"Connection": "Keep-Alive"},
             ))
         stats.stats["response_cache_misses"] += 1
@@ -564,7 +626,7 @@ class QueryJsonView(PydanticView):
             "domain": u.split("@", 1)[-1],
         } for u in query_req.users]
 
-        async def _qj_task() -> tuple[bytes, str | bool]:
+        async def _qj_task() -> tuple[bytes, str, str | bool]:
             """Run backend queries and cache the response body."""
             from xspct_db.backends import run_queries
 
@@ -574,10 +636,10 @@ class QueryJsonView(PydanticView):
                 s, "", False, users, userdata, user_to_pkey, cfg
             )
             if isinstance(query_error, str):
-                return b"", query_error
-            body = json.dumps(userdata).encode()
-            cache.set_response(response_cache_key, body, cfg)
-            return body, False
+                return b"", "application/json", query_error
+            body, ctype = _serialize_body(userdata, fmt)
+            cache.set_response(response_cache_key, (body, ctype), cfg)
+            return body, ctype, False
 
         request_timeout = float(cfg.get("xspct_db_request_timeout", 0))
         try:
@@ -590,14 +652,14 @@ class QueryJsonView(PydanticView):
         if timed_out:
             return _log_response(s, web.Response(status=504, text="504 Request Timeout"))
 
-        response_body, query_error = result
+        response_body, response_ctype, query_error = result
 
         if isinstance(query_error, str):
             return _log_response(s, web.Response(status=500, text=query_error))
 
         return _log_response(s, web.Response(
             body=response_body,
-            content_type="application/json",
+            content_type=response_ctype,
             headers={"Connection": "Keep-Alive"},
         ))
 
@@ -656,7 +718,7 @@ class RspamdSettingsView(PydanticView):
 
         # Read and parse body first so uid is available for the session tag.
         raw_body = await self.request.read()
-        parsed_body: Any = _parse_body(raw_body)
+        parsed_body: Any = _parse_body(raw_body, self.request.headers.get("Content-Type", ""))
 
         # Construct the model explicitly from the parsed dict to avoid any
         # alias-resolution issues caused by aiohttp_pydantic's model introspection.
@@ -683,14 +745,17 @@ class RspamdSettingsView(PydanticView):
         if not verify_api_key(s, self.request.headers.get(cfg["xspct_db_api_header"]), cfg):
             return _log_response(s, web.Response(status=401, text="401 Unauthorized"))
 
+        fmt = _detect_response_format(self.request)
+
         # --- Response cache lookup ---
-        response_cache_key = _rspamd_cache_key(rspamd_req, cfg)
-        cached_body = cache.get_response(response_cache_key, cfg)
-        if cached_body is not None:
+        response_cache_key = _rspamd_cache_key(rspamd_req, cfg) + (fmt,)
+        cached = cache.get_response(response_cache_key, cfg)
+        if cached is not None:
             stats.stats["response_cache_hits"] += 1
+            cached_body, cached_ctype = cached
             return _log_response(s, web.Response(
                 body=cached_body,
-                content_type="application/json",
+                content_type=cached_ctype,
                 headers={"Connection": "Keep-Alive"},
             ))
         stats.stats["response_cache_misses"] += 1
@@ -700,7 +765,7 @@ class RspamdSettingsView(PydanticView):
             addr for addr in ([rspamd_req.from_addr] + rspamd_req.rcpts) if addr
         ))
 
-        async def _rs_task() -> bytes:
+        async def _rs_task() -> tuple[bytes, str]:
             """Run backend queries and build the Rspamd settings response."""
             userdata: dict[str, Any] = {"users": {}}
             user_to_pkey: dict[str, Any] = {}
@@ -722,9 +787,9 @@ class RspamdSettingsView(PydanticView):
                 settings_extra_data=_build_settings_extra_data(userdata, cfg),
                 settings_error=[],
             )
-            body = json.dumps(reply.model_dump(exclude_none=True)).encode()
-            cache.set_response(response_cache_key, body, cfg)
-            return body
+            body, ctype = _serialize_body(reply.model_dump(exclude_none=True), fmt)
+            cache.set_response(response_cache_key, (body, ctype), cfg)
+            return body, ctype
 
         request_timeout = float(cfg.get("xspct_db_request_timeout", 0))
         try:
@@ -737,9 +802,10 @@ class RspamdSettingsView(PydanticView):
         if timed_out:
             return _log_response(s, web.Response(status=504, text="504 Request Timeout"))
 
+        result_body, result_ctype = result
         return _log_response(s, web.Response(
-            body=result,
-            content_type="application/json",
+            body=result_body,
+            content_type=result_ctype,
             headers={"Connection": "Keep-Alive"},
         ))
 
