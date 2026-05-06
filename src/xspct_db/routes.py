@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import ast
 import asyncio
 import json
 import logging
@@ -15,6 +14,7 @@ from urllib.parse import unquote
 from aiohttp import web
 from aiohttp_pydantic import PydanticView
 from aiohttp_pydantic.oas.typing import r200, r401, r500, r504
+from pydantic import ValidationError
 
 from xspct_db import cache, stats
 from xspct_db.auth import verify_api_key, verify_metrics_auth
@@ -54,6 +54,7 @@ def _build_settings_extra_data(
 
 
 _MSGPACK_MIMES = frozenset({"application/msgpack", "application/x-msgpack"})
+_PARSE_FAILED = object()
 
 
 def _parse_body(raw: bytes, content_type: str = "") -> Any:
@@ -61,8 +62,7 @@ def _parse_body(raw: bytes, content_type: str = "") -> Any:
 
     When *content_type* indicates msgpack (``application/msgpack`` or
     ``application/x-msgpack``) the body is decoded with :mod:`msgpack`.
-    Falls back to JSON and then ``ast.literal_eval`` to handle the case
-    where aiohttp_pydantic has cached the body as a Python-repr string.
+    Otherwise the body must be valid JSON.
     """
     if not raw:
         return None
@@ -73,18 +73,18 @@ def _parse_body(raw: bytes, content_type: str = "") -> Any:
             import msgpack  # type: ignore[import-untyped]
             return msgpack.unpackb(raw, raw=False)
         except ImportError:
-            pass
+            return _PARSE_FAILED
         except Exception:
-            return None
+            return _PARSE_FAILED
     try:
         return json.loads(raw)
     except Exception:
-        pass
-    try:
-        return ast.literal_eval(raw.decode(errors="replace"))
-    except Exception:
-        pass
-    return raw.decode(errors="replace")
+        return _PARSE_FAILED
+
+
+def _invalid_body_response() -> web.Response:
+    """Return a stable 400 response for malformed request payloads."""
+    return web.Response(status=400, text="400 Bad Request")
 
 
 def _detect_response_format(request: web.Request) -> str:
@@ -584,10 +584,15 @@ class QueryJsonView(PydanticView):
 
         raw_body = await self.request.read()
         parsed_body: Any = _parse_body(raw_body, self.request.headers.get("Content-Type", ""))
+        if raw_body and parsed_body is _PARSE_FAILED:
+            return _log_response(s, _invalid_body_response())
 
-        query_req = QueryJsonRequest.model_validate(
-            parsed_body if isinstance(parsed_body, dict) else {}
-        )
+        try:
+            query_req = QueryJsonRequest.model_validate(
+                parsed_body if isinstance(parsed_body, dict) else {}
+            )
+        except ValidationError:
+            return _log_response(s, _invalid_body_response())
 
         _log_request(s, self.request, body=parsed_body)
 
@@ -709,22 +714,27 @@ class RspamdSettingsView(PydanticView):
         # Read and parse body first so uid is available for the session tag.
         raw_body = await self.request.read()
         parsed_body: Any = _parse_body(raw_body, self.request.headers.get("Content-Type", ""))
+        if raw_body and parsed_body is _PARSE_FAILED:
+            return _log_response(f"<{s_id}>", _invalid_body_response())
 
         # Construct the model explicitly from the parsed dict to avoid any
         # alias-resolution issues caused by aiohttp_pydantic's model introspection.
-        if isinstance(parsed_body, dict):
-            rspamd_req = RspamdSettingsRequest(
-                uid=parsed_body.get("uid", ""),
-                from_addr=parsed_body.get("from", ""),
-                rcpts=parsed_body.get("rcpts", []),
-                mta_name=parsed_body.get("mta-name"),
-                mta_host=parsed_body.get("mta-host"),
-                ip=parsed_body.get("ip"),
-                settings_name=parsed_body.get("settings-name"),
-                settings_id=parsed_body.get("settings-id"),
-            )
-        else:
-            rspamd_req = RspamdSettingsRequest()
+        try:
+            if isinstance(parsed_body, dict):
+                rspamd_req = RspamdSettingsRequest(
+                    uid=parsed_body.get("uid", ""),
+                    from_addr=parsed_body.get("from", ""),
+                    rcpts=parsed_body.get("rcpts", []),
+                    mta_name=parsed_body.get("mta-name"),
+                    mta_host=parsed_body.get("mta-host"),
+                    ip=parsed_body.get("ip"),
+                    settings_name=parsed_body.get("settings-name"),
+                    settings_id=parsed_body.get("settings-id"),
+                )
+            else:
+                rspamd_req = RspamdSettingsRequest()
+        except ValidationError:
+            return _log_response(f"<{s_id}>", _invalid_body_response())
 
         # Prefer uid from body, fall back to X-Rspamd-ID header
         rspamd_id = rspamd_req.uid or self.request.headers.get(cfg["xspct_db_rspamd_header"])
