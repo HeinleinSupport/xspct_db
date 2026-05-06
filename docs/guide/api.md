@@ -60,6 +60,10 @@ The L1 in-process cache is consulted first, then Redis (L2) when enabled, then t
 
 **Path parameter:** `user` – the email address or username to look up (URL-encoded)
 
+**Body encoding:** The response format is controlled by content negotiation (see
+[Body encoding](#body-encoding) below).  Send `Accept: application/msgpack` to receive a
+msgpack-encoded response.
+
 **Response (user found):**
 
 ```json
@@ -95,6 +99,10 @@ result is stored for subsequent identical requests.
 Redis (L2) is **not** consulted or populated for batch requests.
 
 **Authentication:** `X-Api-Key` header
+
+**Body encoding:** Request and response bodies can be JSON or msgpack (see
+[Body encoding](#body-encoding) below).
+JSON and msgpack responses for the same user set are cached under separate keys.
 
 **Request body:**
 
@@ -137,6 +145,9 @@ result is stored for subsequent identical requests.  The cache key is built from
 listed in `xspct_db_response_cache.rspamd_key_fields`.
 
 **Authentication:** `X-Api-Key` header
+
+**Body encoding:** Request and response bodies can be JSON or msgpack (see
+[Body encoding](#body-encoding) below).
 
 **Request body** (all fields optional):
 
@@ -189,3 +200,44 @@ mapped by primary key, plus a reverse alias map.  It is an empty object when no 
 Returns `401 Unauthorized` on bad/missing API key.
 Returns `503 Service Overloaded` when all foreground query slots are busy.
 Returns `504 Request Timeout` when the per-request timeout is exceeded.
+
+---
+
+## Body encoding
+
+All query endpoints support both **JSON** (default) and **msgpack** (`pip install
+"xspct_db[msgpack]"`).  Content negotiation follows this precedence:
+
+1. **`Accept` header** — if it contains `application/msgpack` or `application/x-msgpack` the
+   response is msgpack-encoded.  `application/json` forces JSON.
+2. **`Content-Type` mirroring** — if the `Accept` header gives no clear preference, the
+   response format mirrors the request `Content-Type`.
+3. **Default** — JSON.
+
+Supported MIME types for both request and response: `application/msgpack`,
+`application/x-msgpack`.
+
+If `msgpack` is not installed and a client requests msgpack encoding, the server returns
+`406 Not Acceptable`.
+
+**Example — send and receive msgpack:**
+
+```bash
+python3 -c "
+import msgpack, sys
+sys.stdout.buffer.write(msgpack.packb({'users': ['alice@mailexample.de']}))
+" | curl -s -X POST http://localhost:11350/v1/query-json \
+     -H 'X-Api-Key: your-key' \
+     -H 'Content-Type: application/msgpack' \
+     --data-binary @- | python3 -c "import msgpack,sys; print(msgpack.unpackb(sys.stdin.buffer.read()))"
+```
+
+**Example — JSON request, msgpack response:**
+
+```bash
+curl -s -X POST http://localhost:11350/v1/query-json \
+     -H 'X-Api-Key: your-key' \
+     -H 'Content-Type: application/json' \
+     -H 'Accept: application/msgpack' \
+     -d '{"users": ["alice@mailexample.de"]}' | python3 -c "import msgpack,sys; print(msgpack.unpackb(sys.stdin.buffer.read()))"
+```

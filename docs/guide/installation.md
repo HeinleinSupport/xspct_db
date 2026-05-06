@@ -20,6 +20,9 @@ pip install "xspct_db[mysql]"
 # With Redis caching
 pip install "xspct_db[redis]"
 
+# With msgpack body encoding
+pip install "xspct_db[msgpack]"
+
 # With uvloop event loop
 pip install "xspct_db[uvloop]"
 

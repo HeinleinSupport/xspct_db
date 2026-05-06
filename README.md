@@ -16,6 +16,7 @@ pip install xspct_db                   # core (aiohttp + PyYAML)
 pip install "xspct_db[ldap]"          # + bonsai LDAP support
 pip install "xspct_db[mysql]"         # + aiomysql support
 pip install "xspct_db[redis]"         # + Redis caching
+pip install "xspct_db[msgpack]"       # + msgpack body encoding
 pip install "xspct_db[uvloop]"        # + uvloop event loop
 pip install "xspct_db[all]"           # all optional backends
 pip install "xspct_db[all,dev]"       # + dev/test dependencies
@@ -70,7 +71,7 @@ xspct_db has three independent cache layers, all using `TTLCache` from `cachetoo
 |-------|-----------|-------|
 | L1 object cache | `xspct_db_local_cache` | Per-user lookup; zero latency, in-process |
 | L2 object cache | `xspct_db_redis_cache` | Per-user lookup; shared across workers via Redis |
-| Response cache | `xspct_db_response_cache` | Full JSON response body for `POST /v1/query-json` and `POST /v1/rspamd-settings` |
+| Response cache | `xspct_db_response_cache` | Full serialised response body for `POST /v1/query-json` and `POST /v1/rspamd-settings` (JSON or msgpack, cached separately) |
 
 On a `GET /v1/query/{user}` request, lookups flow: L1 → L2 (Redis) → backend.
 On a `POST` request, the response cache is checked first; on a miss the backend is queried
