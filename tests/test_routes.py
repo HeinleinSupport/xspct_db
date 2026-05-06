@@ -164,6 +164,26 @@ async def test_rspamd_settings_deduplication(yaml_app_client):
     assert len(alice_keys) <= 1
 
 
+async def test_query_json_python_repr_body_returns_400(app_client):
+    """Python-literal bodies are rejected; only JSON/msgpack are accepted."""
+    resp = await app_client.post(
+        "/v1/query-json",
+        data="{'users': ['alice@mailexample.de']}",
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 400
+
+
+async def test_rspamd_settings_malformed_json_returns_400(app_client):
+    """Malformed non-empty JSON bodies return 400 Bad Request."""
+    resp = await app_client.post(
+        "/v1/rspamd-settings",
+        data='{"from": ',
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 400
+
+
 # ---------------------------------------------------------------------------
 # Response cache integration tests
 # ---------------------------------------------------------------------------
