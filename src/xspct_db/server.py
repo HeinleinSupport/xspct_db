@@ -85,7 +85,8 @@ async def _on_shutdown(app: web.Application) -> None:
 
 def create_app(config: dict[str, Any]) -> web.Application:
     """Build and return the aiohttp :class:`~aiohttp.web.Application`."""
-    app = web.Application()
+    client_max_size = int(config.get("xspct_db_client_max_size", 1048576))
+    app = web.Application(client_max_size=client_max_size)
     app["config"] = config
     setup_routes(app)
     oas.setup(
@@ -144,6 +145,8 @@ def run(config_path: str) -> None:
         config["xspct_db_api_key_verify_fail"],
         type(config["xspct_db_api_key_verify_fail"]),
     )
+    if not config["xspct_db_api_key_verify_fail"]:
+        logger.warning("API key verification is DISABLED (permissive mode) – all requests are accepted without authentication")
     logger.info(
         "rspamd header: %s (type: %s)",
         config["xspct_db_rspamd_header"],
@@ -158,6 +161,11 @@ def run(config_path: str) -> None:
         "request timeout header: %s (type: %s)",
         config["xspct_db_request_timeout_header"],
         type(config["xspct_db_request_timeout_header"]),
+    )
+    logger.info(
+        "request timeout header max: %s (type: %s)",
+        config["xspct_db_request_timeout_header_max"],
+        type(config["xspct_db_request_timeout_header_max"]),
     )
     for qk, qv in config.get("xspct_db_queries", {}).items():
         if "db_type" in qv:

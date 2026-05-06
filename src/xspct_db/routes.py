@@ -498,7 +498,12 @@ class QueryView(PydanticView):
             header_val = self.request.headers.get(timeout_header)
             if header_val is not None:
                 try:
-                    request_timeout = float(header_val)
+                    header_timeout = float(header_val)
+                    if header_timeout > 0:
+                        max_timeout = float(cfg.get("xspct_db_request_timeout_header_max", 120))
+                        request_timeout = min(header_timeout, max_timeout)
+                    else:
+                        logger.warning("%s - ignoring invalid timeout header value: %s", s, header_val)
                 except (ValueError, TypeError):
                     pass
 
@@ -598,6 +603,11 @@ class QueryJsonView(PydanticView):
 
         if not verify_api_key(s, self.request.headers.get(cfg["xspct_db_api_header"]), cfg):
             return _log_response(s, web.Response(status=401, text="401 Unauthorized"))
+
+        max_users = int(cfg.get("xspct_db_query_json_max_users", 500))
+        if len(query_req.users) > max_users:
+            logger.warning("%s - query-json user count %d exceeds limit %d", s, len(query_req.users), max_users)
+            return _log_response(s, web.Response(status=400, text="400 Bad Request: too many users"))
 
         fmt = _detect_response_format(self.request)
 

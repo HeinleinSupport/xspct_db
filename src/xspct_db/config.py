@@ -28,9 +28,12 @@ DEFAULTS: dict[str, Any] = {
     "xspct_db_api_header": "X-Api-Key",
     "xspct_db_api_key": "changeme",
     "xspct_db_api_key_verify_fail": True,
+    "xspct_db_client_max_size": 1048576,  # 1 MiB
     "xspct_db_rspamd_header": "X-Rspamd-ID",
     "xspct_db_request_timeout": 0,
     "xspct_db_request_timeout_header": "",
+    "xspct_db_request_timeout_header_max": 120,
+    "xspct_db_query_json_max_users": 500,
     "xspct_db_foreground_slots": 30,
     "xspct_db_background_slots": 5,
     "xspct_db_stats_enabled": True,
