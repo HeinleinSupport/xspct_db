@@ -59,7 +59,7 @@ xspct_db_metrics_auth:
 |-----|---------|-------------|
 | `xspct_db_stats_enabled` | `true` | Emit periodic stats log lines |
 | `xspct_db_stats_interval` | `60` | Interval between stats log lines (seconds) |
-| `xspct_db_stats_sample_interval` | `10` | Pool connection sampling interval (seconds) |
+| `xspct_db_stats_sample_interval` | `10` | Interval for pool connection sampling and Redis health-check PING (seconds) |
 
 ## Local (L1) Cache
 
