@@ -121,3 +121,22 @@ def test_merge_userdata_merges_existing():
     result = merge_userdata("s", "alice", {"groups": ["staff"]}, userdata)
     assert "admin" in result["users"]["alice"]["groups"]
     assert "staff" in result["users"]["alice"]["groups"]
+
+
+def test_merge_userdata_merges_nested_in_place():
+    userdata: dict[str, Any] = {
+        "users": {"alice": {"attrs": {"groups": ["admin"], "quota": ["1G"]}}}
+    }
+    target_before = userdata["users"]["alice"]
+
+    result = merge_userdata(
+        "s",
+        "alice",
+        {"attrs": {"groups": ["staff"], "quota": ["2G"], "shell": ["/bin/zsh"]}},
+        userdata,
+    )
+
+    assert result["users"]["alice"] is target_before
+    assert result["users"]["alice"]["attrs"]["groups"] == ["admin", "staff"]
+    assert result["users"]["alice"]["attrs"]["quota"] == ["1G", "2G"]
+    assert result["users"]["alice"]["attrs"]["shell"] == ["/bin/zsh"]

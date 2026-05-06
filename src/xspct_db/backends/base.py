@@ -9,8 +9,6 @@ import logging
 import sys
 from typing import Any
 
-from xspct_db.utils import dict_merge
-
 logger = logging.getLogger(__name__)
 
 
@@ -113,9 +111,38 @@ def merge_userdata(
     if user not in userdata["users"]:
         userdata["users"][user] = data
     else:
-        userdata["users"][user] = dict_merge(userdata["users"][user], data)
+        _merge_mapping_in_place(userdata["users"][user], data)
     logger.debug("%s - userdata updated for %s", s, user)
     return userdata
+
+
+def _merge_mapping_in_place(target: dict[str, Any], incoming: dict[str, Any]) -> None:
+    """Recursively merge *incoming* into *target* without rebuilding *target*."""
+    for key, value in incoming.items():
+        if key not in target:
+            target[key] = value
+            continue
+
+        current = target[key]
+        if isinstance(current, dict) and isinstance(value, dict):
+            _merge_mapping_in_place(current, value)
+            continue
+
+        if current == value:
+            continue
+
+        if isinstance(current, list):
+            if isinstance(value, list):
+                current.extend(value)
+            else:
+                current.append(value)
+            continue
+
+        if isinstance(value, list):
+            target[key] = [current, *value]
+            continue
+
+        target[key] = [current, value]
 
 
 def match_attributed_user(
