@@ -235,6 +235,7 @@ def log_stats(cfg: dict[str, Any]) -> None:
 
 async def log_stats_periodically(cfg: dict[str, Any]) -> None:
     """Background task: sample pools and call :func:`log_stats` on a fixed interval."""
+    from xspct_db import cache  # local import to avoid circular deps
     interval = float(cfg.get("xspct_db_stats_interval", 60))
     sample_interval = float(cfg.get("xspct_db_stats_sample_interval", 10))
     elapsed = 0.0
@@ -242,6 +243,7 @@ async def log_stats_periodically(cfg: dict[str, Any]) -> None:
         await asyncio.sleep(sample_interval)
         elapsed += sample_interval
         sample_pool_connections(cfg)
+        await cache.ping_redis(cfg)
         if elapsed >= interval:
             log_stats(cfg)
             elapsed = 0.0

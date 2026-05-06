@@ -133,6 +133,22 @@ def set_connection(conn: Any) -> None:
     connection = conn
 
 
+async def ping_redis(cfg: dict[str, Any]) -> None:
+    """Proactive Redis health check: PING and reset the circuit-breaker on success.
+
+    Called periodically so a recovered Redis connection is re-enabled without
+    waiting for the next real query to succeed.
+    """
+    if connection is None or not cfg["xspct_db_redis_cache"]["enabled"]:
+        return
+    try:
+        await connection.ping()
+        reset_errors()
+    except Exception as exc:
+        logger.warning("Redis health check failed: %s", exc)
+        record_error(str(exc), cfg)
+
+
 def reset_errors() -> None:
     """Reset circuit-breaker error counters after a successful Redis call."""
     global error_count, errors

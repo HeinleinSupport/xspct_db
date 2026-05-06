@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Any
 from urllib.parse import unquote
 
@@ -56,6 +57,11 @@ def _build_settings_extra_data(
 _MSGPACK_MIMES = frozenset({"application/msgpack", "application/x-msgpack"})
 _PARSE_FAILED = object()
 
+try:
+    import msgpack as _msgpack  # type: ignore[import-untyped]
+except ImportError:
+    _msgpack = None  # type: ignore[assignment]
+
 
 def _parse_body(raw: bytes, content_type: str = "") -> Any:
     """Return a parsed object from *raw* bytes.
@@ -70,10 +76,9 @@ def _parse_body(raw: bytes, content_type: str = "") -> Any:
     ct = content_type.split(";", 1)[0].strip().lower()
     if ct in _MSGPACK_MIMES:
         try:
-            import msgpack  # type: ignore[import-untyped]
-            return msgpack.unpackb(raw, raw=False)
-        except ImportError:
-            return _PARSE_FAILED
+            if _msgpack is None:
+                return _PARSE_FAILED
+            return _msgpack.unpackb(raw, raw=False)
         except Exception:
             return _PARSE_FAILED
     try:
@@ -115,16 +120,23 @@ def _serialize_body(data: Any, fmt: str) -> tuple[bytes, str]:
     """
     if fmt == "msgpack":
         try:
-            import msgpack  # type: ignore[import-untyped]
-            return msgpack.packb(data, use_bin_type=True), "application/msgpack"
-        except ImportError:
-            raise web.HTTPNotAcceptable(text="msgpack library not installed")
+            if _msgpack is None:
+                raise web.HTTPNotAcceptable(text="msgpack library not installed")
+            return _msgpack.packb(data, use_bin_type=True), "application/msgpack"
+        except web.HTTPNotAcceptable:
+            raise
     return json.dumps(data).encode(), "application/json"
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+# Short-lived cache for Prometheus text output (rebuilt at most once per TTL).
+_PROMETHEUS_CACHE_TTL: float = 5.0
+_prometheus_cache: str | None = None
+_prometheus_cache_time: float = 0.0
+
 
 def _prometheus_lines(s_stats: dict[str, Any]) -> str:
     """Render the current stats dict as a Prometheus text payload."""
@@ -383,8 +395,14 @@ class MetricsView(PydanticView):
                 headers={"WWW-Authenticate": 'Basic realm="xspct-db metrics", charset="UTF-8"'},
             )
 
+        global _prometheus_cache, _prometheus_cache_time
+        now = time.monotonic()
+        if _prometheus_cache is None or now - _prometheus_cache_time > _PROMETHEUS_CACHE_TTL:
+            _prometheus_cache = _prometheus_lines(stats.stats)
+            _prometheus_cache_time = now
+
         return web.Response(
-            text=_prometheus_lines(stats.stats),
+            text=_prometheus_cache,
             headers={"Content-Type": "text/plain; version=0.0.4; charset=utf-8"},
         )
 
@@ -612,7 +630,7 @@ class QueryJsonView(PydanticView):
         fmt = _detect_response_format(self.request)
 
         # --- Response cache lookup ---
-        response_cache_key = ("query-json", frozenset(query_req.users), fmt)
+        response_cache_key = ("query-json", tuple(sorted(query_req.users)), fmt)
         cached = cache.get_response(response_cache_key, cfg)
         if cached is not None:
             stats.stats["response_cache_hits"] += 1

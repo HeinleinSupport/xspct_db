@@ -56,7 +56,7 @@ async def _on_startup(app: web.Application) -> None:
         from xspct_db.backends.mysql_backend import create_pools as create_mysql_pools
         await create_mysql_pools(cfg)
 
-    asyncio.create_task(stats.log_stats_periodically(cfg))
+    app["_stats_task"] = asyncio.create_task(stats.log_stats_periodically(cfg))
 
     # Foreground / background query semaphores
     app["fg_sem"] = asyncio.Semaphore(int(cfg.get("xspct_db_foreground_slots", 30)))
@@ -66,6 +66,12 @@ async def _on_startup(app: web.Application) -> None:
 
 async def _on_shutdown(app: web.Application) -> None:
     cfg: dict[str, Any] = app["config"]
+
+    # Stop the periodic stats task.
+    stats_task: asyncio.Task | None = app.get("_stats_task")
+    if stats_task is not None:
+        stats_task.cancel()
+        await asyncio.gather(stats_task, return_exceptions=True)
 
     # Cancel outstanding background query tasks.
     bg_tasks: set[asyncio.Task] = app.get("bg_tasks", set())
