@@ -116,3 +116,30 @@ def merge_userdata(
         userdata["users"][user] = dict_merge(userdata["users"][user], data)
     logger.debug("%s - userdata updated for %s", s, user)
     return userdata
+
+
+def match_attributed_user(
+    row_values: set[str] | frozenset[str],
+    direct_values: dict[str, tuple[str, Any]],
+    pkey_value: str,
+    fallback_values: dict[str, tuple[str, Any]],
+) -> tuple[str | None, Any]:
+    """Resolve a result row back to the originating input user.
+
+    Matching precedence is kept identical to the previous backend-local logic:
+    1. any row value matching a direct/effective username
+    2. the translated primary-key field matching a direct/effective username
+    3. any row value matching a fallback fragment value/parameter
+    """
+    match = next((direct_values[val] for val in row_values if val in direct_values), None)
+    if match is not None:
+        return match
+
+    if pkey_value in direct_values:
+        return direct_values[pkey_value]
+
+    match = next((fallback_values[val] for val in row_values if val in fallback_values), None)
+    if match is not None:
+        return match
+
+    return None, False

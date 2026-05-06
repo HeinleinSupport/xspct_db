@@ -14,7 +14,12 @@ import timeit
 from typing import Any
 
 from xspct_db import stats
-from xspct_db.backends.base import merge_userdata, split_values_into_list, translate_entries
+from xspct_db.backends.base import (
+    match_attributed_user,
+    merge_userdata,
+    split_values_into_list,
+    translate_entries,
+)
 from xspct_db.utils import timer
 
 logger = logging.getLogger(__name__)
@@ -160,7 +165,15 @@ async def query(
                 if attr in userdata["users"][pkey]:
                     force_prim_key = pkey
                     query_values = userdata["users"][pkey][attr]
-                    logger.debug("%s (%s) - (%s) - use_result matched: pkey=%s attr=%s query_values=%s", s, timer(), query_name, pkey, attr, query_values)
+                    logger.debug(
+                        "%s (%s) - (%s) - use_result matched: pkey=%s attr=%s query_values=%s",
+                        s,
+                        timer(),
+                        query_name,
+                        pkey,
+                        attr,
+                        query_values,
+                    )
                 else:
                     logger.debug("%s (%s) - (%s) - use_result not matched", s, timer(), query_name)
             else:
@@ -237,29 +250,20 @@ async def query(
         uf["effective_username"]: (uf["orig_username"], uf["force_prim_key"])
         for uf in user_frags
     }
+    frag_param_to_user: dict[str, tuple[str, Any]] = {}
+    for uf in user_frags:
+        owner = (uf["orig_username"], uf["force_prim_key"])
+        for param in uf["frag_params"]:
+            frag_param_to_user.setdefault(str(param), owner)
 
     for entry in search:
         row_values = frozenset(str(v) for v in entry.values() if v is not None)
-        orig_username_r: str | None = None
-        fpk: Any = False
-        for uf in user_frags:
-            if uf["effective_username"] in row_values:
-                orig_username_r = uf["orig_username"]
-                fpk = uf["force_prim_key"]
-                break
-        if orig_username_r is None:
-            pk_raw = str(entry.get(pkey_field, ""))
-            if pk_raw in effective_to_user:
-                orig_username_r, fpk = effective_to_user[pk_raw]
-        if orig_username_r is None:
-            # Third fallback: row matched via a catch-all/wildcard param (e.g.
-            # "@domain.tld") that is present in row_values but the full user
-            # address is not.  Check each user's actual query fragment params.
-            for uf in user_frags:
-                if any(str(p) in row_values for p in uf["frag_params"]):
-                    orig_username_r = uf["orig_username"]
-                    fpk = uf["force_prim_key"]
-                    break
+        orig_username_r, fpk = match_attributed_user(
+            row_values,
+            effective_to_user,
+            str(entry.get(pkey_field, "")),
+            frag_param_to_user,
+        )
 
         pk, entries = translate_entries(s, query_config, entry, cfg, fpk)
         if orig_username_r is not None:
