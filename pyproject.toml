@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "xspct_db"
-version = "0.6.0"
+version = "0.7.0"
 description = "Multi-backend database query service with Redis caching and Rspamd integration"
 readme = "README.md"
 license = { text = "EUPL-1.2" }
