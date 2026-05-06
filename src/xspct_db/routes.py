@@ -452,24 +452,14 @@ class QueryView(PydanticView):
         # --- L1 / L2 cache lookup ---
         cache_object = None
         if use_local or use_redis:
-            # Snapshot L1 presence *before* calling get_object so we can
-            # attribute the hit to the correct layer for stats.
-            l1_has_hit = False
-            if use_local and cache._local_aliases is not None:
-                canonical = cache._local_aliases.get(user)
-                if canonical is not None and cache._local_users is not None and canonical in cache._local_users:
-                    l1_has_hit = True
-                elif cache._local_negative is not None and user in cache._local_negative:
-                    l1_has_hit = True
-
-            cache_object = await cache.get_object(s, user, cfg)
+            cache_object, cache_source = await cache.get_object_with_source(s, user, cfg)
             if isinstance(cache_object, dict):
-                if l1_has_hit:
+                if cache_source == "local":
                     stats.stats["local_cache_hits"] += 1
                 else:
                     stats.stats["redis_hits"] += 1
             elif isinstance(cache_object, bool) and not cache_object:
-                if l1_has_hit:
+                if cache_source == "local":
                     stats.stats["local_cache_hits"] += 1
                 else:
                     stats.stats["redis_negative_hits"] += 1

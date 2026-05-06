@@ -171,20 +171,32 @@ async def get_object(
         False  – negative cache hit (user confirmed absent)
         None   – cache miss on both layers
     """
+    result, _source = await get_object_with_source(s, user, cfg)
+    return result
+
+
+async def get_object_with_source(
+    s: str, user: str, cfg: dict[str, Any]
+) -> tuple[dict[str, Any] | bool | None, str]:
+    """Return ``(value, source)`` for a two-level cache lookup.
+
+    ``source`` is one of ``"local"``, ``"redis"``, ``"redis-negative"``,
+    or ``"miss"``.
+    """
     # --- L1 lookup ---
     if _ensure_l1(cfg):
         canonical = _local_aliases.get(user)  # type: ignore[union-attr]
         if canonical is not None:
             user_obj = _local_users.get(canonical)  # type: ignore[union-attr]
             if user_obj is not None:
-                return user_obj
+                return user_obj, "local"
 
         if user in _local_negative:  # type: ignore[operator]
-            return False
+            return False, "local"
 
     # --- L2 (Redis) lookup ---
     if not is_enabled(cfg):
-        return None
+        return None, "miss"
 
     redis_cfg = cfg["xspct_db_redis_cache"]
     key_alias = redis_cfg["prefix_alias"] + user
@@ -194,7 +206,7 @@ async def get_object(
     except Exception as exc:
         logger.error("%s - error getting redis alias %s: %s", s, key_alias, exc)
         record_error(str(exc), cfg)
-        return None
+        return None, "miss"
 
     reset_errors()
 
@@ -205,14 +217,14 @@ async def get_object(
         except Exception as exc:
             logger.error("%s - error getting redis object %s: %s", s, key_obj, exc)
             record_error(str(exc), cfg)
-            return None
+            return None, "miss"
         if isinstance(raw, str):
             user_obj = json.loads(raw)
             # Backfill L1 from Redis result.
             if _ensure_l1(cfg):
                 _local_aliases[user] = alias  # type: ignore[index]
                 _local_users[alias] = user_obj  # type: ignore[index]
-            return user_obj
+            return user_obj, "redis"
     else:
         key_neg = redis_cfg["prefix_negative_alias"] + user
         try:
@@ -220,14 +232,14 @@ async def get_object(
         except Exception as exc:
             logger.error("%s - error getting redis neg alias %s: %s", s, key_neg, exc)
             record_error(str(exc), cfg)
-            return None
+            return None, "miss"
         if isinstance(neg, str):
             # Backfill L1 negative.
             if _ensure_l1(cfg):
                 _local_negative[user] = True  # type: ignore[index]
-            return False
+            return False, "redis-negative"
 
-    return None
+    return None, "miss"
 
 
 async def set_cache(
