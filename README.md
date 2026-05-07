@@ -95,7 +95,7 @@ See [docs/guide/configuration.md](docs/guide/configuration.md) for all options.
 ## Development
 
 ```bash
-git clone https://github.com/heinlein-support/xspct_db
+git clone https://github.com/HeinleinSupport/xspct_db
 cd xspct_db
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[all,dev]"

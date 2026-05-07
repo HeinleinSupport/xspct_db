@@ -82,8 +82,8 @@ xspct-db = "xspct_db.__main__:main"
 xspct-db-test-client = "xspct_db.test_client:main"
 
 [project.urls]
-Repository = "https://github.com/heinlein-support/xspct_db"
-Issues = "https://github.com/heinlein-support/xspct_db/issues"
+Repository = "https://github.com/HeinleinSupport/xspct_db"
+Issues = "https://github.com/HeinleinSupport/xspct_db/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/xspct_db"]

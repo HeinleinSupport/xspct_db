@@ -36,7 +36,7 @@ pip install "xspct_db[all,dev]"
 ## From Source
 
 ```bash
-git clone https://github.com/heinlein-support/xspct_db
+git clone https://github.com/HeinleinSupport/xspct_db
 cd xspct_db
 python -m venv .venv
 source .venv/bin/activate
