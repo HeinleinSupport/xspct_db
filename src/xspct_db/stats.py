@@ -61,9 +61,7 @@ def reset() -> None:
 
 def update_query_stats(qk: str, elapsed: float) -> None:
     """Record one query execution time for *qk*."""
-    entry = stats["queries"].setdefault(
-        qk, {"count": 0, "time_total": 0.0, "time_min": float("inf"), "time_max": 0.0}
-    )
+    entry = stats["queries"].setdefault(qk, {"count": 0, "time_total": 0.0, "time_min": float("inf"), "time_max": 0.0})
     entry["count"] += 1
     entry["time_total"] += elapsed
     if elapsed < entry["time_min"]:
@@ -78,9 +76,7 @@ def sample_pool_connections(cfg: dict[str, Any]) -> None:
     def _record(key: str, open_conns: int, limit: int | None = None) -> None:
         if open_conns < 0:
             return
-        s = stats["pool_connections"].setdefault(
-            key, {"min": float("inf"), "max": 0, "sum": 0.0, "count": 0, "limit": None}
-        )
+        s = stats["pool_connections"].setdefault(key, {"min": float("inf"), "max": 0, "sum": 0.0, "count": 0, "limit": None})
         if s["limit"] is None and limit is not None:
             s["limit"] = limit
         if open_conns < s["min"]:
@@ -92,6 +88,7 @@ def sample_pool_connections(cfg: dict[str, Any]) -> None:
 
     # Redis
     from xspct_db import cache  # local import to avoid circular deps
+
     if cache.connection is not None:
         pool = cache.connection.connection_pool
         try:
@@ -107,6 +104,7 @@ def sample_pool_connections(cfg: dict[str, Any]) -> None:
     # LDAP
     if cfg.get("xspct_db_types_enabled", {}).get("ldap"):
         import sys as _sys
+
         _ldap_mod = _sys.modules.get("xspct_db.backends.ldap_backend")
         if _ldap_mod is not None:
             for qk, pool in _ldap_mod._pools.items():
@@ -118,6 +116,7 @@ def sample_pool_connections(cfg: dict[str, Any]) -> None:
     # MySQL
     if cfg.get("xspct_db_types_enabled", {}).get("mysql"):
         import sys as _sys
+
         _mysql_mod = _sys.modules.get("xspct_db.backends.mysql_backend")
         if _mysql_mod is not None:
             for qk, pool in _mysql_mod._pools.items():
@@ -138,6 +137,7 @@ def log_stats(cfg: dict[str, Any]) -> None:
 
     # L1 local cache hit/miss counters
     from xspct_db import cache  # local import to avoid circular deps
+
     rcfg = cfg.get("xspct_db_local_cache", {})
     if rcfg.get("enabled", False):
         l1_hits = stats["local_cache_hits"]
@@ -146,7 +146,9 @@ def log_stats(cfg: dict[str, Any]) -> None:
         l1_rate = (l1_hits / l1_total * 100) if l1_total > 0 else 0.0
         logger.info(
             "STATS local_cache_hits=%d local_cache_misses=%d local_hit_rate=%.1f%%",
-            l1_hits, l1_misses, l1_rate,
+            l1_hits,
+            l1_misses,
+            l1_rate,
         )
 
     # Redis hit/miss counters
@@ -158,7 +160,10 @@ def log_stats(cfg: dict[str, Any]) -> None:
         hit_rate = (redis_hits / total_lookups * 100) if total_lookups > 0 else 0.0
         logger.info(
             "STATS redis_hits=%d redis_misses=%d redis_neg_hits=%d redis_hit_rate=%.1f%%",
-            redis_hits, redis_misses, redis_neg_hits, hit_rate,
+            redis_hits,
+            redis_misses,
+            redis_neg_hits,
+            hit_rate,
         )
 
     # Connection snapshot line
@@ -177,6 +182,7 @@ def log_stats(cfg: dict[str, Any]) -> None:
     if cfg.get("xspct_db_types_enabled", {}).get("ldap"):
         try:
             from xspct_db.backends import ldap_backend
+
             if ldap_backend._pools:
                 ldap_info = {}
                 for qk, pool in ldap_backend._pools.items():
@@ -191,6 +197,7 @@ def log_stats(cfg: dict[str, Any]) -> None:
     if cfg.get("xspct_db_types_enabled", {}).get("mysql"):
         try:
             from xspct_db.backends import mysql_backend
+
             if mysql_backend._pools:
                 mysql_info = {}
                 for qk, pool in mysql_backend._pools.items():
@@ -211,14 +218,14 @@ def log_stats(cfg: dict[str, Any]) -> None:
             avg = ps["sum"] / ps["count"]
             pmin = ps["min"] if ps["min"] != float("inf") else 0
             limit = ps.get("limit")
-            hint = (
-                f" limit={limit} LIMIT_REACHED"
-                if limit is not None and ps["max"] >= limit
-                else ""
-            )
+            hint = f" limit={limit} LIMIT_REACHED" if limit is not None and ps["max"] >= limit else ""
             logger.info(
                 "STATS pool[%s] conns min=%d avg=%.1f max=%d%s",
-                pk, pmin, avg, ps["max"], hint,
+                pk,
+                pmin,
+                avg,
+                ps["max"],
+                hint,
             )
     stats["pool_connections"].clear()
 
@@ -229,13 +236,18 @@ def log_stats(cfg: dict[str, Any]) -> None:
             qmin = qs["time_min"] if qs["time_min"] != float("inf") else 0.0
             logger.info(
                 "STATS query[%s] count=%d avg=%.5fs min=%.5fs max=%.5fs",
-                qk, qs["count"], avg, qmin, qs["time_max"],
+                qk,
+                qs["count"],
+                avg,
+                qmin,
+                qs["time_max"],
             )
 
 
 async def log_stats_periodically(cfg: dict[str, Any]) -> None:
     """Background task: sample pools and call :func:`log_stats` on a fixed interval."""
     from xspct_db import cache  # local import to avoid circular deps
+
     interval = float(cfg.get("xspct_db_stats_interval", 60))
     sample_interval = float(cfg.get("xspct_db_stats_sample_interval", 10))
     elapsed = 0.0

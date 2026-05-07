@@ -16,6 +16,7 @@ from xspct_db import cache
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def reset_cache_state():
     """Reset module-level cache state before and after each test."""
@@ -78,6 +79,7 @@ async def fake_redis(redis_cfg: dict[str, Any]):
 # Tests – is_enabled()
 # ---------------------------------------------------------------------------
 
+
 def test_is_enabled_false_when_disabled(disabled_cfg):
     assert cache.is_enabled(disabled_cfg) is False
 
@@ -94,6 +96,7 @@ def test_is_enabled_false_when_error_limit_exceeded(redis_cfg):
 # ---------------------------------------------------------------------------
 # Tests – record_error() / reset_errors()
 # ---------------------------------------------------------------------------
+
 
 def test_record_error_increments_counter(redis_cfg):
     count = cache.record_error("oops", redis_cfg)
@@ -118,6 +121,7 @@ def test_reset_errors_noop_when_zero(redis_cfg):
 # ---------------------------------------------------------------------------
 # Tests – get_object()
 # ---------------------------------------------------------------------------
+
 
 async def test_get_object_returns_none_when_disabled(disabled_cfg):
     result = await cache.get_object("s", "user@mailexample.de", disabled_cfg)
@@ -150,6 +154,7 @@ async def test_get_object_negative_cache_hit(fake_redis, redis_cfg):
 # Tests – set_cache()
 # ---------------------------------------------------------------------------
 
+
 async def test_set_cache_stores_user_and_aliases(fake_redis, redis_cfg):
     userdata = {
         "users": {
@@ -178,6 +183,7 @@ async def test_set_cache_noop_when_disabled(disabled_cfg):
 # Tests – set_negative_cache()
 # ---------------------------------------------------------------------------
 
+
 async def test_set_negative_cache_marks_absent_users(fake_redis, redis_cfg):
     await cache.set_negative_cache("s", ["ghost@mailexample.de", "void@mailexample.de"], redis_cfg)
 
@@ -200,6 +206,7 @@ async def test_set_negative_cache_noop_when_disabled(disabled_cfg):
 # Fixtures for L1-only mode
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def local_only_cfg() -> dict[str, Any]:
     """Config with L1 enabled but Redis disabled (L1-only mode)."""
@@ -221,6 +228,7 @@ def local_only_cfg() -> dict[str, Any]:
 # Tests – L1 local cache
 # ---------------------------------------------------------------------------
 
+
 async def test_local_cache_hit_bypasses_redis(redis_cfg):
     """L1 hit returns the user object without any Redis I/O."""
     cache._init_local_caches(redis_cfg)
@@ -238,9 +246,7 @@ async def test_get_object_with_source_reports_local_hit(redis_cfg):
     cache._local_users["alice@mailexample.de"] = {"uid": ["alice"]}
     cache._local_aliases["alice@mailexample.de"] = "alice@mailexample.de"
 
-    result, source = await cache.get_object_with_source(
-        "s", "alice@mailexample.de", redis_cfg
-    )
+    result, source = await cache.get_object_with_source("s", "alice@mailexample.de", redis_cfg)
     assert result == {"uid": ["alice"]}
     assert source == "local"
 
@@ -287,9 +293,7 @@ async def test_local_cache_negative_miss_falls_through_to_redis(fake_redis, redi
 async def test_get_object_with_source_reports_redis_negative_hit(fake_redis, redis_cfg):
     await fake_redis.set("xspct_db_neg_ghost@mailexample.de", "1")
 
-    result, source = await cache.get_object_with_source(
-        "s", "ghost@mailexample.de", redis_cfg
-    )
+    result, source = await cache.get_object_with_source("s", "ghost@mailexample.de", redis_cfg)
     assert result is False
     assert source == "redis-negative"
 
@@ -367,6 +371,7 @@ async def test_local_cache_disabled_falls_through(disabled_cfg):
 # Fixtures for response cache tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def response_cache_cfg() -> dict[str, Any]:
     return {
@@ -393,6 +398,7 @@ def response_cache_disabled_cfg() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Tests – response cache
 # ---------------------------------------------------------------------------
+
 
 def test_response_cache_miss(response_cache_cfg):
     """get_response() returns None on a cold cache."""

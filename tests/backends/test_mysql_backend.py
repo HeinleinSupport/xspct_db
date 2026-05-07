@@ -56,6 +56,7 @@ _USER_B = {
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_aiomysql_mock() -> MagicMock:
     mock = MagicMock()
     mock.Error = type("Error", (Exception,), {})
@@ -90,6 +91,7 @@ def _make_pool(cursor_results: list[dict]) -> tuple[MagicMock, MagicMock]:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def reset_pools():
     mysql_backend._pools.clear()
@@ -105,6 +107,7 @@ def reset_stats():
 # ---------------------------------------------------------------------------
 # Tests – error paths
 # ---------------------------------------------------------------------------
+
 
 async def test_query_aiomysql_not_installed():
     with pytest.MonkeyPatch().context() as mp:
@@ -159,6 +162,7 @@ async def test_query_mysql_error_returns_500():
 # Tests – single user (baseline)
 # ---------------------------------------------------------------------------
 
+
 async def test_query_single_user_merges_result():
     """Single user: execute called once, result merged, user_to_pkey set."""
     aiomysql_mock = _make_aiomysql_mock()
@@ -193,20 +197,21 @@ async def test_query_single_user_params_correct():
 # Tests – multi-user batching
 # ---------------------------------------------------------------------------
 
+
 async def test_query_multiple_users_single_execute():
     """Two users produce exactly one execute() call."""
     aiomysql_mock = _make_aiomysql_mock()
-    pool, cursor = _make_pool([
-        {"uid": "alice@mailexample.de", "mail": "alice@mailexample.de"},
-        {"uid": "bob@mailexample.de", "mail": "bob@mailexample.de"},
-    ])
+    pool, cursor = _make_pool(
+        [
+            {"uid": "alice@mailexample.de", "mail": "alice@mailexample.de"},
+            {"uid": "bob@mailexample.de", "mail": "bob@mailexample.de"},
+        ]
+    )
     mysql_backend._pools["mysql_users"] = pool
 
     with pytest.MonkeyPatch().context() as mp:
         mp.setitem(sys.modules, "aiomysql", aiomysql_mock)
-        ud, u2p, error = await mysql_backend.query(
-            "s", "mysql_users", [_USER_A, _USER_B], {"users": {}}, {}, MYSQL_CFG
-        )
+        ud, u2p, error = await mysql_backend.query("s", "mysql_users", [_USER_A, _USER_B], {"users": {}}, {}, MYSQL_CFG)
 
     assert error is False
     cursor.execute.assert_called_once()
@@ -221,17 +226,17 @@ async def test_query_multiple_users_single_execute():
 async def test_query_multiple_users_user_to_pkey():
     """user_to_pkey is correctly set for each input user after a batch query."""
     aiomysql_mock = _make_aiomysql_mock()
-    pool, cursor = _make_pool([
-        {"uid": "alice@mailexample.de", "mail": "alice@mailexample.de"},
-        {"uid": "bob@mailexample.de", "mail": "bob@mailexample.de"},
-    ])
+    pool, cursor = _make_pool(
+        [
+            {"uid": "alice@mailexample.de", "mail": "alice@mailexample.de"},
+            {"uid": "bob@mailexample.de", "mail": "bob@mailexample.de"},
+        ]
+    )
     mysql_backend._pools["mysql_users"] = pool
 
     with pytest.MonkeyPatch().context() as mp:
         mp.setitem(sys.modules, "aiomysql", aiomysql_mock)
-        ud, u2p, error = await mysql_backend.query(
-            "s", "mysql_users", [_USER_A, _USER_B], {"users": {}}, {}, MYSQL_CFG
-        )
+        ud, u2p, error = await mysql_backend.query("s", "mysql_users", [_USER_A, _USER_B], {"users": {}}, {}, MYSQL_CFG)
 
     assert error is False
     # Each input user's orig_username maps to their result pk.
@@ -247,9 +252,7 @@ async def test_query_no_results_returns_empty_userdata():
 
     with pytest.MonkeyPatch().context() as mp:
         mp.setitem(sys.modules, "aiomysql", aiomysql_mock)
-        ud, u2p, error = await mysql_backend.query(
-            "s", "mysql_users", [_USER_A, _USER_B], {"users": {}}, {}, MYSQL_CFG
-        )
+        ud, u2p, error = await mysql_backend.query("s", "mysql_users", [_USER_A, _USER_B], {"users": {}}, {}, MYSQL_CFG)
 
     assert error is False
     assert ud["users"] == {}
@@ -274,8 +277,8 @@ _WILDCARD_CFG: dict[str, Any] = {
             "database": "testdb",
             "primary_key": "uid",
             # WHERE produces params [username, username, @domain] per user.
-            "query": 'SELECT destination AS uid, email AS mailLocalAddress'
-                     ' FROM view_aliases WHERE (destination="%u" OR email="%u" OR email="@%d")',
+            "query": "SELECT destination AS uid, email AS mailLocalAddress"
+            ' FROM view_aliases WHERE (destination="%u" OR email="%u" OR email="@%d")',
             "query_replace": {"%u": "username", "%d": "domain"},
         }
     },
@@ -302,16 +305,16 @@ async def test_query_wildcard_catchall_attribution():
     """
     aiomysql_mock = _make_aiomysql_mock()
     # Row: the catch-all alias maps @mailexample.de → cr-primary@mailexample.de.
-    pool, cursor = _make_pool([
-        {"uid": "cr-primary@mailexample.de", "mailLocalAddress": "@mailexample.de"},
-    ])
+    pool, cursor = _make_pool(
+        [
+            {"uid": "cr-primary@mailexample.de", "mailLocalAddress": "@mailexample.de"},
+        ]
+    )
     mysql_backend._pools["mysql_wc"] = pool
 
     with pytest.MonkeyPatch().context() as mp:
         mp.setitem(sys.modules, "aiomysql", aiomysql_mock)
-        ud, u2p, error = await mysql_backend.query(
-            "s", "mysql_wc", [_USER_WILDCARD], {"users": {}}, {}, _WILDCARD_CFG
-        )
+        ud, u2p, error = await mysql_backend.query("s", "mysql_wc", [_USER_WILDCARD], {"users": {}}, {}, _WILDCARD_CFG)
 
     assert error is False
     # The row must be merged under its primary key.
@@ -334,9 +337,11 @@ async def test_query_wildcard_catchall_multiple_users():
         "domain": "other.mailexample.de",
     }
     aiomysql_mock = _make_aiomysql_mock()
-    pool, cursor = _make_pool([
-        {"uid": "cr-primary@mailexample.de", "mailLocalAddress": "@mailexample.de"},
-    ])
+    pool, cursor = _make_pool(
+        [
+            {"uid": "cr-primary@mailexample.de", "mailLocalAddress": "@mailexample.de"},
+        ]
+    )
     mysql_backend._pools["mysql_wc"] = pool
 
     with pytest.MonkeyPatch().context() as mp:

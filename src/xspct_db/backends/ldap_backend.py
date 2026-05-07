@@ -75,9 +75,7 @@ def _build_ldap_filter(
         for r, field in query_config["search_filter_replace"].items():
             if field in u:
                 vals = split_values_into_list(s, u[field], cfg=cfg)
-                ldap_filter = ldap_filter.replace(
-                    r, bonsai.escape_filter_exp(vals[0])
-                )
+                ldap_filter = ldap_filter.replace(r, bonsai.escape_filter_exp(vals[0]))
     return ldap_filter
 
 
@@ -160,18 +158,16 @@ async def query(
         ldap_filter = _build_ldap_filter(s, u, query_config, cfg, bonsai)
         # Collect the actual values substituted into the filter so Phase 4 can
         # fall back to them when a wildcard/catch-all matches.
-        frag_values: list[str] = (
-            [str(v) for v in query_values]
-            if isinstance(query_values, list)
-            else [str(query_values)]
+        frag_values: list[str] = [str(v) for v in query_values] if isinstance(query_values, list) else [str(query_values)]
+        user_frags.append(
+            {
+                "orig_username": orig_username,
+                "effective_username": u["username"],
+                "force_prim_key": force_prim_key,
+                "ldap_filter": ldap_filter,
+                "frag_values": frag_values,
+            }
         )
-        user_frags.append({
-            "orig_username": orig_username,
-            "effective_username": u["username"],
-            "force_prim_key": force_prim_key,
-            "ldap_filter": ldap_filter,
-            "frag_values": frag_values,
-        })
 
     if not user_frags:
         return userdata, user_to_pkey, error
@@ -216,8 +212,7 @@ async def query(
             # Phase 4: attribute result rows to input users and merge into userdata.
             pkey_field = query_config.get("primary_key", "mail")
             effective_to_user: dict[str, tuple[str, Any]] = {
-                uf["effective_username"]: (uf["orig_username"], uf["force_prim_key"])
-                for uf in user_frags
+                uf["effective_username"]: (uf["orig_username"], uf["force_prim_key"]) for uf in user_frags
             }
             frag_value_to_user: dict[str, tuple[str, Any]] = {}
             for uf in user_frags:

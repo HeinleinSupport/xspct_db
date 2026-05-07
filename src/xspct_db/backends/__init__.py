@@ -38,30 +38,22 @@ async def _execute_query(
     elif db_type == "yaml":
         from xspct_db.backends.yaml_backend import query as yaml_query
 
-        userdata, user_to_pkey, query_error = await yaml_query(
-            s, qk, users, userdata, user_to_pkey, cfg
-        )
+        userdata, user_to_pkey, query_error = await yaml_query(s, qk, users, userdata, user_to_pkey, cfg)
 
     elif db_type == "ldap":
         from xspct_db.backends.ldap_backend import query as ldap_query
 
-        userdata, user_to_pkey, query_error = await ldap_query(
-            s, qk, users, userdata, user_to_pkey, cfg
-        )
+        userdata, user_to_pkey, query_error = await ldap_query(s, qk, users, userdata, user_to_pkey, cfg)
 
     elif db_type == "mysql":
         from xspct_db.backends.mysql_backend import query as mysql_query
 
-        userdata, user_to_pkey, query_error = await mysql_query(
-            s, qk, users, userdata, user_to_pkey, cfg
-        )
+        userdata, user_to_pkey, query_error = await mysql_query(s, qk, users, userdata, user_to_pkey, cfg)
 
     elif db_type == "delay":
         from xspct_db.backends.delay import query as delay_query
 
-        userdata, user_to_pkey, query_error = await delay_query(
-            s, qk, users, userdata, user_to_pkey, cfg
-        )
+        userdata, user_to_pkey, query_error = await delay_query(s, qk, users, userdata, user_to_pkey, cfg)
 
     elif db_type == "error":
         from xspct_db.backends.dummy import error_query
@@ -99,10 +91,7 @@ async def _run_parallel_phase(
     cfg: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any], str | bool]:
     """Run independent queries concurrently and merge their results in config order."""
-    tasks = [
-        _execute_query(s, qk, qv, users, {"users": {}}, {}, cfg)
-        for qk, qv in phase
-    ]
+    tasks = [_execute_query(s, qk, qv, users, {"users": {}}, {}, cfg) for qk, qv in phase]
     results = await asyncio.gather(*tasks)
     query_error: str | bool = False
     for phase_userdata, phase_user_to_pkey, phase_error in results:
@@ -142,9 +131,7 @@ async def run_queries(
                 if isinstance(query_error, str):
                     return userdata, user_to_pkey, query_error
 
-            userdata, user_to_pkey, query_error = await _execute_query(
-                s, qk, qv, users, userdata, user_to_pkey, cfg
-            )
+            userdata, user_to_pkey, query_error = await _execute_query(s, qk, qv, users, userdata, user_to_pkey, cfg)
             if isinstance(query_error, str):
                 logger.error("%s - query error: %s", s, query_error)
                 return userdata, user_to_pkey, query_error
@@ -153,9 +140,7 @@ async def run_queries(
         parallel_phase.append((qk, qv))
 
     if parallel_phase:
-        userdata, user_to_pkey, query_error = await _run_parallel_phase(
-            s, parallel_phase, users, userdata, user_to_pkey, cfg
-        )
+        userdata, user_to_pkey, query_error = await _run_parallel_phase(s, parallel_phase, users, userdata, user_to_pkey, cfg)
         if isinstance(query_error, str):
             return userdata, user_to_pkey, query_error
 

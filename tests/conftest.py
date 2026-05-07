@@ -17,6 +17,7 @@ from xspct_db.server import create_app
 # Minimal configurations
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def base_cfg() -> dict[str, Any]:
     """Return a minimal configuration dict with a dummy query backend."""
@@ -118,6 +119,7 @@ def yaml_cfg(base_cfg: dict[str, Any]) -> dict[str, Any]:
 # aiohttp test client
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 async def app_client(base_cfg: dict[str, Any], aiohttp_client: Any) -> TestClient:
     """Return an aiohttp test client wired to a fresh app instance."""
@@ -151,6 +153,7 @@ def response_cache_cfg(base_cfg: dict[str, Any]) -> dict[str, Any]:
 async def response_cache_app_client(response_cache_cfg: dict[str, Any], aiohttp_client: Any) -> TestClient:
     """Return an aiohttp test client with response caching enabled."""
     from xspct_db import cache as xcache
+
     xcache._response_cache_clear()
     stats.reset()
     app = create_app(response_cache_cfg)

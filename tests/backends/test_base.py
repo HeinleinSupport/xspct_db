@@ -28,15 +28,14 @@ def _cfg(**overrides: Any) -> dict[str, Any]:
 # split_values_into_list
 # ---------------------------------------------------------------------------
 
+
 def test_split_string_to_list():
-    result = split_values_into_list("s", "a,b,c", key="field",
-                                    query_config={"value_split": {"field": ","}})
+    result = split_values_into_list("s", "a,b,c", key="field", query_config={"value_split": {"field": ","}})
     assert result == ["a", "b", "c"]
 
 
 def test_split_list_items():
-    result = split_values_into_list("s", ["a,b", "c"], key="field",
-                                    query_config={"value_split": {"field": ","}})
+    result = split_values_into_list("s", ["a,b", "c"], key="field", query_config={"value_split": {"field": ","}})
     assert result == ["a", "b", "c"]
 
 
@@ -56,6 +55,7 @@ def test_no_split_rule_list_passthrough():
 # maybe_list
 # ---------------------------------------------------------------------------
 
+
 def test_maybe_list_creates_empty_for_missing_key():
     entries = {}
     result = maybe_list("s", entries, "key", {}, _cfg())
@@ -71,6 +71,7 @@ def test_maybe_list_converts_string():
 # ---------------------------------------------------------------------------
 # translate_entries
 # ---------------------------------------------------------------------------
+
 
 def test_translate_entries_basic():
     data = {"mail": "user@mailexample.de", "uid": "user"}
@@ -110,6 +111,7 @@ def test_translate_entries_attr_filter():
 # merge_userdata
 # ---------------------------------------------------------------------------
 
+
 def test_merge_userdata_creates_new_entry():
     userdata: dict[str, Any] = {"users": {}}
     result = merge_userdata("s", "alice", {"uid": ["alice"]}, userdata)
@@ -124,9 +126,7 @@ def test_merge_userdata_merges_existing():
 
 
 def test_merge_userdata_merges_nested_in_place():
-    userdata: dict[str, Any] = {
-        "users": {"alice": {"attrs": {"groups": ["admin"], "quota": ["1G"]}}}
-    }
+    userdata: dict[str, Any] = {"users": {"alice": {"attrs": {"groups": ["admin"], "quota": ["1G"]}}}}
     target_before = userdata["users"]["alice"]
 
     result = merge_userdata(

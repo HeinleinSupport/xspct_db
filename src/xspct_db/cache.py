@@ -25,8 +25,8 @@ error_count: int = 0
 errors: list[str] = []
 
 # L1 in-process TTLCache instances.  Initialised lazily by _init_local_caches().
-_local_aliases: TTLCache | None = None   # alias/address  → canonical user key
-_local_users: TTLCache | None = None     # canonical key  → user dict
+_local_aliases: TTLCache | None = None  # alias/address  → canonical user key
+_local_users: TTLCache | None = None  # canonical key  → user dict
 _local_negative: TTLCache | None = None  # address        → True (absent marker)
 
 # Response cache – pre-serialised JSON bytes keyed by (endpoint, frozenset/tuple).
@@ -36,6 +36,7 @@ _response_cache: TTLCache | None = None
 # ---------------------------------------------------------------------------
 # L1 helpers
 # ---------------------------------------------------------------------------
+
 
 def _init_local_caches(cfg: dict[str, Any]) -> None:
     """Create (or recreate) the three TTLCache instances from *cfg*."""
@@ -78,6 +79,7 @@ def _ensure_l1(cfg: dict[str, Any]) -> bool:
 # ---------------------------------------------------------------------------
 # Response cache helpers
 # ---------------------------------------------------------------------------
+
 
 def _init_response_cache(cfg: dict[str, Any]) -> None:
     """Create (or recreate) the response TTLCache from *cfg*."""
@@ -126,6 +128,7 @@ def set_response(key: tuple, body: bytes, cfg: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 # Redis helpers
 # ---------------------------------------------------------------------------
+
 
 def set_connection(conn: Any) -> None:
     """Inject the Redis connection object (called from server startup)."""
@@ -177,9 +180,7 @@ def is_enabled(cfg: dict[str, Any]) -> bool:
     return True
 
 
-async def get_object(
-    s: str, user: str, cfg: dict[str, Any]
-) -> dict[str, Any] | bool | None:
+async def get_object(s: str, user: str, cfg: dict[str, Any]) -> dict[str, Any] | bool | None:
     """Two-level cache lookup: L1 (in-process TTLCache) → L2 (Redis).
 
     Returns:
@@ -191,9 +192,7 @@ async def get_object(
     return result
 
 
-async def get_object_with_source(
-    s: str, user: str, cfg: dict[str, Any]
-) -> tuple[dict[str, Any] | bool | None, str]:
+async def get_object_with_source(s: str, user: str, cfg: dict[str, Any]) -> tuple[dict[str, Any] | bool | None, str]:
     """Return ``(value, source)`` for a two-level cache lookup.
 
     ``source`` is one of ``"local"``, ``"redis"``, ``"redis-negative"``,
@@ -301,9 +300,7 @@ async def set_cache(
         record_error(str(exc), cfg)
 
 
-async def set_negative_cache(
-    s: str, neg_users: list[str], cfg: dict[str, Any]
-) -> None:
+async def set_negative_cache(s: str, neg_users: list[str], cfg: dict[str, Any]) -> None:
     """Mark a list of users as absent in both L1 and L2."""
     if not neg_users:
         return

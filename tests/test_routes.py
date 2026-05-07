@@ -13,6 +13,7 @@ import pytest
 # Health / utility
 # ---------------------------------------------------------------------------
 
+
 async def test_health_endpoint(app_client):
     resp = await app_client.get("/")
     assert resp.status == 200
@@ -37,22 +38,19 @@ async def test_metrics_unauthenticated(app_client):
 # /v1/query/{user}
 # ---------------------------------------------------------------------------
 
+
 async def test_query_missing_api_key(app_client):
     resp = await app_client.get("/v1/query/user@mailexample.de")
     assert resp.status == 401
 
 
 async def test_query_wrong_api_key(app_client):
-    resp = await app_client.get(
-        "/v1/query/user@mailexample.de", headers={"X-Api-Key": "wrong"}
-    )
+    resp = await app_client.get("/v1/query/user@mailexample.de", headers={"X-Api-Key": "wrong"})
     assert resp.status == 401
 
 
 async def test_query_dummy_backend(app_client):
-    resp = await app_client.get(
-        "/v1/query/user@mailexample.de", headers={"X-Api-Key": "test-key"}
-    )
+    resp = await app_client.get("/v1/query/user@mailexample.de", headers={"X-Api-Key": "test-key"})
     assert resp.status == 200
     data = json.loads(await resp.text())
     assert "users" in data
@@ -62,21 +60,16 @@ async def test_query_dummy_backend(app_client):
 # /v1/query/{user} with YAML backend
 # ---------------------------------------------------------------------------
 
+
 async def test_query_yaml_known_user(yaml_app_client):
-    resp = await yaml_app_client.get(
-        "/v1/query/alice@mailexample.de", headers={"X-Api-Key": "test-key"}
-    )
+    resp = await yaml_app_client.get("/v1/query/alice@mailexample.de", headers={"X-Api-Key": "test-key"})
     assert resp.status == 200
     data = json.loads(await resp.text())
-    assert "alice@mailexample.de" in data["users"] or any(
-        "alice" in str(v) for v in data["users"].values()
-    )
+    assert "alice@mailexample.de" in data["users"] or any("alice" in str(v) for v in data["users"].values())
 
 
 async def test_query_yaml_unknown_user_returns_empty(yaml_app_client):
-    resp = await yaml_app_client.get(
-        "/v1/query/nobody@mailexample.de", headers={"X-Api-Key": "test-key"}
-    )
+    resp = await yaml_app_client.get("/v1/query/nobody@mailexample.de", headers={"X-Api-Key": "test-key"})
     assert resp.status == 200
     data = json.loads(await resp.text())
     assert data["users"] == {}
@@ -84,15 +77,14 @@ async def test_query_yaml_unknown_user_returns_empty(yaml_app_client):
 
 async def test_query_alias_lookup(yaml_app_client):
     """Query by alias should resolve to the canonical user."""
-    resp = await yaml_app_client.get(
-        "/v1/query/a@mailexample.de", headers={"X-Api-Key": "test-key"}
-    )
+    resp = await yaml_app_client.get("/v1/query/a@mailexample.de", headers={"X-Api-Key": "test-key"})
     assert resp.status == 200
 
 
 # ---------------------------------------------------------------------------
 # /v1/rspamd-settings
 # ---------------------------------------------------------------------------
+
 
 async def test_rspamd_settings_auth_required(app_client):
     resp = await app_client.post(
@@ -131,11 +123,13 @@ async def test_rspamd_settings_with_body(yaml_app_client):
     """from + rcpts addresses are looked up and returned in settings_data."""
     resp = await yaml_app_client.post(
         "/v1/rspamd-settings",
-        data=json.dumps({
-            "uid": "abc123",
-            "from": "alice@mailexample.de",
-            "rcpts": ["nobody@mailexample.de"],
-        }),
+        data=json.dumps(
+            {
+                "uid": "abc123",
+                "from": "alice@mailexample.de",
+                "rcpts": ["nobody@mailexample.de"],
+            }
+        ),
         headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
     )
     assert resp.status == 200
@@ -151,10 +145,12 @@ async def test_rspamd_settings_deduplication(yaml_app_client):
     """Sender appearing in rcpts is only looked up once."""
     resp = await yaml_app_client.post(
         "/v1/rspamd-settings",
-        data=json.dumps({
-            "from": "alice@mailexample.de",
-            "rcpts": ["alice@mailexample.de", "nobody@mailexample.de"],
-        }),
+        data=json.dumps(
+            {
+                "from": "alice@mailexample.de",
+                "rcpts": ["alice@mailexample.de", "nobody@mailexample.de"],
+            }
+        ),
         headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
     )
     assert resp.status == 200
@@ -188,9 +184,11 @@ async def test_rspamd_settings_malformed_json_returns_400(app_client):
 # Response cache integration tests
 # ---------------------------------------------------------------------------
 
+
 async def test_query_json_response_cache_hit(response_cache_app_client):
     """Second identical POST /v1/query-json is served from the response cache."""
     from xspct_db import stats as xstats
+
     payload = json.dumps({"users": ["alice@mailexample.de"]})
     headers = {"Content-Type": "application/json", "X-Api-Key": "test-key"}
 
@@ -206,6 +204,7 @@ async def test_query_json_response_cache_hit(response_cache_app_client):
 async def test_rspamd_settings_response_cache_hit(response_cache_app_client):
     """Second identical POST /v1/rspamd-settings is served from the response cache."""
     from xspct_db import stats as xstats
+
     payload = json.dumps({"from": "alice@mailexample.de", "rcpts": ["bob@mailexample.de"]})
     headers = {"Content-Type": "application/json", "X-Api-Key": "test-key"}
 
@@ -222,9 +221,11 @@ async def test_rspamd_settings_response_cache_hit(response_cache_app_client):
 # Queue / timeout behaviour
 # ---------------------------------------------------------------------------
 
+
 async def test_query_returns_504_on_timeout(delay_app_client):
     """GET /v1/query/{user} returns 504 when the backend exceeds the timeout."""
     from xspct_db import stats as xstats
+
     headers = {"X-Api-Key": "test-key"}
     resp = await delay_app_client.get("/v1/query/user@mailexample.de", headers=headers)
     assert resp.status == 504
@@ -234,6 +235,7 @@ async def test_query_returns_504_on_timeout(delay_app_client):
 async def test_query_json_returns_504_on_timeout(delay_app_client):
     """POST /v1/query-json returns 504 when the backend exceeds the timeout."""
     from xspct_db import stats as xstats
+
     payload = json.dumps({"users": ["user@mailexample.de"]})
     headers = {"Content-Type": "application/json", "X-Api-Key": "test-key"}
     resp = await delay_app_client.post("/v1/query-json", data=payload, headers=headers)
@@ -244,6 +246,7 @@ async def test_query_json_returns_504_on_timeout(delay_app_client):
 async def test_rspamd_settings_returns_504_on_timeout(delay_app_client):
     """POST /v1/rspamd-settings returns 504 when the backend exceeds the timeout."""
     from xspct_db import stats as xstats
+
     payload = json.dumps({"from": "user@mailexample.de", "rcpts": ["bob@mailexample.de"]})
     headers = {"Content-Type": "application/json", "X-Api-Key": "test-key"}
     resp = await delay_app_client.post("/v1/rspamd-settings", data=payload, headers=headers)
@@ -256,12 +259,10 @@ async def test_foreground_overload_returns_503(delay_app_client):
     import asyncio
 
     from xspct_db import stats as xstats
+
     headers = {"X-Api-Key": "test-key"}
     # Saturate the 2 fg slots + 1 bg slot, then the 4th should get 503
-    tasks = [
-        asyncio.ensure_future(delay_app_client.get("/v1/query/u1@mailexample.de", headers=headers))
-        for _ in range(4)
-    ]
+    tasks = [asyncio.ensure_future(delay_app_client.get("/v1/query/u1@mailexample.de", headers=headers)) for _ in range(4)]
     results = await asyncio.gather(*tasks)
     statuses = sorted(r.status for r in results)
     # At least one 503 expected
@@ -272,6 +273,7 @@ async def test_foreground_overload_returns_503(delay_app_client):
 async def test_prometheus_includes_queue_metrics(app_client):
     """GET /metrics includes the five queue-related counter lines."""
     from xspct_db import stats as xstats
+
     xstats.reset()
     resp = await app_client.get("/metrics")
     body = await resp.text()
@@ -343,6 +345,7 @@ async def test_query_get_accept_msgpack(yaml_app_client):
 async def test_query_json_msgpack_cache_hit(response_cache_app_client):
     """Second identical msgpack POST /v1/query-json is served from the response cache."""
     from xspct_db import stats as xstats
+
     payload = msgpack.packb({"users": ["alice@mailexample.de"]}, use_bin_type=True)
     headers = {"Content-Type": "application/msgpack", "X-Api-Key": "test-key"}
 
@@ -352,14 +355,13 @@ async def test_query_json_msgpack_cache_hit(response_cache_app_client):
     resp2 = await response_cache_app_client.post("/v1/query-json", data=payload, headers=headers)
     assert resp2.status == 200
     assert xstats.stats["response_cache_hits"] == 1
-    assert msgpack.unpackb(await resp1.read(), raw=False) == msgpack.unpackb(
-        await resp2.read(), raw=False
-    )
+    assert msgpack.unpackb(await resp1.read(), raw=False) == msgpack.unpackb(await resp2.read(), raw=False)
 
 
 async def test_query_json_msgpack_and_json_cache_separate(response_cache_app_client):
     """msgpack and JSON responses for the same query use separate cache entries."""
     from xspct_db import stats as xstats
+
     users_payload = {"users": ["alice@mailexample.de"]}
 
     # First: JSON request

@@ -54,9 +54,7 @@ async def test_run_queries_parallelises_independent_queries(monkeypatch: pytest.
     monkeypatch.setattr(delay_backend, "query", fake_delay_query)
 
     started = time.perf_counter()
-    userdata, user_to_pkey, error = await run_queries(
-        "s", _USER["username"], False, [_USER], {"users": {}}, {}, cfg
-    )
+    userdata, user_to_pkey, error = await run_queries("s", _USER["username"], False, [_USER], {"users": {}}, {}, cfg)
     elapsed = time.perf_counter() - started
 
     assert error is False
@@ -113,9 +111,7 @@ async def test_run_queries_keeps_use_result_queries_sequential(monkeypatch: pyte
 
     monkeypatch.setattr(yaml_backend, "query", fake_yaml_query)
 
-    userdata, user_to_pkey, error = await run_queries(
-        "s", _USER["username"], False, [_USER], {"users": {}}, {}, cfg
-    )
+    userdata, user_to_pkey, error = await run_queries("s", _USER["username"], False, [_USER], {"users": {}}, {}, cfg)
 
     assert error is False
     assert second_ran is True

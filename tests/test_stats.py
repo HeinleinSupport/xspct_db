@@ -23,6 +23,7 @@ from xspct_db.stats import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def clean_stats():
     """Reset global stats before every test."""
@@ -42,6 +43,7 @@ def base_cfg() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # update_query_stats
 # ---------------------------------------------------------------------------
+
 
 class TestUpdateQueryStats:
     def test_first_entry_is_recorded(self):
@@ -72,6 +74,7 @@ class TestUpdateQueryStats:
 # reset
 # ---------------------------------------------------------------------------
 
+
 class TestReset:
     def test_counters_zeroed(self):
         stats["requests_total"] = 5
@@ -87,6 +90,7 @@ class TestReset:
 # ---------------------------------------------------------------------------
 # sample_pool_connections
 # ---------------------------------------------------------------------------
+
 
 class TestSamplePoolConnections:
     def test_no_redis_no_backends(self, base_cfg):
@@ -143,8 +147,10 @@ class TestSamplePoolConnections:
         mock_pool.maxsize = 20
         mock_mysql = MagicMock()
         mock_mysql._pools = {"mysql1": mock_pool}
-        with patch("xspct_db.cache.connection", None), \
-             patch.dict("sys.modules", {"xspct_db.backends.mysql_backend": mock_mysql}):
+        with (
+            patch("xspct_db.cache.connection", None),
+            patch.dict("sys.modules", {"xspct_db.backends.mysql_backend": mock_mysql}),
+        ):
             sample_pool_connections(cfg)
         assert "mysql1" in stats["pool_connections"]
         assert stats["pool_connections"]["mysql1"]["max"] == 2
@@ -154,13 +160,13 @@ class TestSamplePoolConnections:
 # log_stats
 # ---------------------------------------------------------------------------
 
+
 class TestLogStats:
     def test_request_counters_logged(self, base_cfg, caplog):
         stats["requests_total"] = 7
         stats["requests_known"] = 5
         stats["requests_unknown"] = 2
-        with patch("xspct_db.cache.connection", None), \
-             caplog.at_level("INFO", logger="xspct_db.stats"):
+        with patch("xspct_db.cache.connection", None), caplog.at_level("INFO", logger="xspct_db.stats"):
             log_stats(base_cfg)
         assert "requests_total=7" in caplog.text
         assert "requests_known=5" in caplog.text
@@ -172,8 +178,7 @@ class TestLogStats:
         stats["redis_negative_hits"] = 0
         mock_redis = MagicMock()
         mock_redis.connection_pool._created_connections = 1
-        with patch("xspct_db.cache.connection", mock_redis), \
-             caplog.at_level("INFO", logger="xspct_db.stats"):
+        with patch("xspct_db.cache.connection", mock_redis), caplog.at_level("INFO", logger="xspct_db.stats"):
             log_stats(base_cfg)
         assert "redis_hits=3" in caplog.text
         assert "redis_hit_rate=75.0%" in caplog.text
@@ -181,43 +186,34 @@ class TestLogStats:
     def test_redis_hit_rate_zero_when_no_lookups(self, base_cfg, caplog):
         mock_redis = MagicMock()
         mock_redis.connection_pool._created_connections = 0
-        with patch("xspct_db.cache.connection", mock_redis), \
-             caplog.at_level("INFO", logger="xspct_db.stats"):
+        with patch("xspct_db.cache.connection", mock_redis), caplog.at_level("INFO", logger="xspct_db.stats"):
             log_stats(base_cfg)
         assert "redis_hit_rate=0.0%" in caplog.text
 
     def test_pool_connection_stats_logged_and_cleared(self, base_cfg, caplog):
-        stats["pool_connections"]["redis"] = {
-            "min": 1, "max": 5, "sum": 9.0, "count": 3, "limit": 40
-        }
-        with patch("xspct_db.cache.connection", None), \
-             caplog.at_level("INFO", logger="xspct_db.stats"):
+        stats["pool_connections"]["redis"] = {"min": 1, "max": 5, "sum": 9.0, "count": 3, "limit": 40}
+        with patch("xspct_db.cache.connection", None), caplog.at_level("INFO", logger="xspct_db.stats"):
             log_stats(base_cfg)
         assert "pool[redis] conns min=1 avg=3.0 max=5" in caplog.text
         assert stats["pool_connections"] == {}
 
     def test_limit_reached_hint_shown(self, base_cfg, caplog):
-        stats["pool_connections"]["mysql1"] = {
-            "min": 20, "max": 20, "sum": 20.0, "count": 1, "limit": 20
-        }
-        with patch("xspct_db.cache.connection", None), \
-             caplog.at_level("INFO", logger="xspct_db.stats"):
+        stats["pool_connections"]["mysql1"] = {"min": 20, "max": 20, "sum": 20.0, "count": 1, "limit": 20}
+        with patch("xspct_db.cache.connection", None), caplog.at_level("INFO", logger="xspct_db.stats"):
             log_stats(base_cfg)
         assert "LIMIT_REACHED" in caplog.text
 
     def test_query_timing_logged(self, base_cfg, caplog):
         update_query_stats("mysql1", 0.001)
         update_query_stats("mysql1", 0.003)
-        with patch("xspct_db.cache.connection", None), \
-             caplog.at_level("INFO", logger="xspct_db.stats"):
+        with patch("xspct_db.cache.connection", None), caplog.at_level("INFO", logger="xspct_db.stats"):
             log_stats(base_cfg)
         assert "query[mysql1]" in caplog.text
         assert "count=2" in caplog.text
         assert "avg=0.00200s" in caplog.text
 
     def test_no_redis_no_connection_line(self, base_cfg, caplog):
-        with patch("xspct_db.cache.connection", None), \
-             caplog.at_level("INFO", logger="xspct_db.stats"):
+        with patch("xspct_db.cache.connection", None), caplog.at_level("INFO", logger="xspct_db.stats"):
             log_stats(base_cfg)
         assert "redis_connections" not in caplog.text
 
@@ -225,6 +221,7 @@ class TestLogStats:
 # ---------------------------------------------------------------------------
 # log_stats_periodically
 # ---------------------------------------------------------------------------
+
 
 class TestLogStatsPeriodically:
     async def test_calls_log_stats_after_interval(self, base_cfg, caplog):
@@ -234,8 +231,8 @@ class TestLogStatsPeriodically:
         stats["requests_total"] = 1
 
         import asyncio
-        with patch("xspct_db.cache.connection", None), \
-             caplog.at_level("INFO", logger="xspct_db.stats"):
+
+        with patch("xspct_db.cache.connection", None), caplog.at_level("INFO", logger="xspct_db.stats"):
             task = asyncio.create_task(stats_mod.log_stats_periodically(cfg))
             await asyncio.sleep(0.12)
             task.cancel()

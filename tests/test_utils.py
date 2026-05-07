@@ -56,6 +56,7 @@ def test_timer_elapsed_is_string_representable():
 # dict_merge
 # ---------------------------------------------------------------------------
 
+
 def test_dict_merge_disjoint_dicts():
     result = dict_merge({"a": 1}, {"b": 2})
     assert result == {"a": 1, "b": 2}

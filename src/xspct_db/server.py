@@ -50,10 +50,12 @@ async def _on_startup(app: web.Application) -> None:
 
     if cfg.get("xspct_db_types_enabled", {}).get("ldap"):
         from xspct_db.backends.ldap_backend import create_pools as create_ldap_pools
+
         await create_ldap_pools(cfg)
 
     if cfg.get("xspct_db_types_enabled", {}).get("mysql"):
         from xspct_db.backends.mysql_backend import create_pools as create_mysql_pools
+
         await create_mysql_pools(cfg)
 
     app["_stats_task"] = asyncio.create_task(stats.log_stats_periodically(cfg))
@@ -82,10 +84,12 @@ async def _on_shutdown(app: web.Application) -> None:
 
     if cfg.get("xspct_db_types_enabled", {}).get("ldap"):
         from xspct_db.backends.ldap_backend import close_pools as close_ldap_pools
+
         close_ldap_pools()
 
     if cfg.get("xspct_db_types_enabled", {}).get("mysql"):
         from xspct_db.backends.mysql_backend import close_pools as close_mysql_pools
+
         await close_mysql_pools()
 
 

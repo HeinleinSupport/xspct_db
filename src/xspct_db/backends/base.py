@@ -69,12 +69,8 @@ def translate_entries(
     primary_key: Any = None
 
     key = query_config.get("primary_key", "mail")
-    key_translation: dict[str, str] = query_config.get(
-        "key_translation", cfg.get("xspct_db_key_translation", {})
-    )
-    use_attr_filter = (
-        "attr_list" in query_config and query_config["attr_list"][0] != "*"
-    )
+    key_translation: dict[str, str] = query_config.get("key_translation", cfg.get("xspct_db_key_translation", {}))
+    use_attr_filter = "attr_list" in query_config and query_config["attr_list"][0] != "*"
 
     for k, v in data.items():
         if use_attr_filter and k not in query_config["attr_list"]:
@@ -93,6 +89,7 @@ def translate_entries(
     # Convert LDAP DN objects to strings when bonsai is loaded.
     if "dn" in entries and "bonsai" in sys.modules:
         import bonsai  # noqa: PLC0415
+
         if isinstance(entries["dn"], bonsai.ldapdn.LDAPDN):
             entries["dn"] = str(entries["dn"])
 

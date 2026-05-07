@@ -37,10 +37,7 @@ def _ensure_yaml_indexes(cfg: dict[str, Any]) -> dict[str, dict[str, dict[str, t
                         field_index.setdefault(sval, []).append(primary_key)
 
         indexes[yaml_root] = {
-            field: {
-                value: tuple(dict.fromkeys(primary_keys))
-                for value, primary_keys in values.items()
-            }
+            field: {value: tuple(dict.fromkeys(primary_keys)) for value, primary_keys in values.items()}
             for field, values in root_index.items()
         }
 
@@ -174,9 +171,7 @@ async def query(
 
             for yk in yaml_keys:
                 if yk in yaml_data:
-                    primary_key, entries = translate_entries(
-                        s, query_config, yaml_data[yk], cfg, force_prim_key
-                    )
+                    primary_key, entries = translate_entries(s, query_config, yaml_data[yk], cfg, force_prim_key)
                     user_to_pkey[u["username"]] = primary_key
                     userdata = merge_userdata(s, primary_key, entries, userdata)
 

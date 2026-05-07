@@ -43,25 +43,13 @@ class RspamdSettingsRequest(BaseModel):
 class RspamdSettingsResponse(BaseModel):
     """Rspamd settings blob returned to the Rspamd settings HTTP module."""
 
-    actions: dict[str, float] = Field(
-        ..., description="Score thresholds (reject, greylist, add header, …)."
-    )
+    actions: dict[str, float] = Field(..., description="Score thresholds (reject, greylist, add header, …).")
     flags: list[str] = Field(default_factory=list, description="Rspamd processing flags.")
-    groups_disabled: list[str] = Field(
-        default_factory=list, description="Rspamd groups to disable."
-    )
-    groups_enabled: list[str] | None = Field(
-        default=None, description="Rspamd groups to enable."
-    )
-    symbols_disabled: list[str] = Field(
-        default_factory=list, description="Rspamd symbols to disable."
-    )
-    symbols_enabled: list[str] | None = Field(
-        default=None, description="Rspamd symbols to enable."
-    )
-    symbols: list[str] = Field(
-        default_factory=list, description="Rspamd symbols to force."
-    )
+    groups_disabled: list[str] = Field(default_factory=list, description="Rspamd groups to disable.")
+    groups_enabled: list[str] | None = Field(default=None, description="Rspamd groups to enable.")
+    symbols_disabled: list[str] = Field(default_factory=list, description="Rspamd symbols to disable.")
+    symbols_enabled: list[str] | None = Field(default=None, description="Rspamd symbols to enable.")
+    symbols: list[str] = Field(default_factory=list, description="Rspamd symbols to force.")
     settings_data: dict[str, Any] = Field(
         default_factory=dict,
         description="Structured user/alias data for addresses found in from/rcpts.",

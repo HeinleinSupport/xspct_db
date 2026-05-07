@@ -80,19 +80,13 @@ def _build_sql_fragment(
     if not isinstance(query_config.get("query_replace"), dict):
         return sql, params
 
-    active = {
-        ph: field
-        for ph, field in query_config["query_replace"].items()
-        if field in u and ph in sql
-    }
+    active = {ph: field for ph, field in query_config["query_replace"].items() if field in u and ph in sql}
     for placeholder in sorted(active, key=lambda ph: sql.index(ph)):
         field = active[placeholder]
         vals = split_values_into_list(s, u[field], cfg=cfg)
         val = vals[0]
         # Match optional SQL quoting: ["'](prefix)placeholder(suffix)["']
-        pat = re.compile(
-            r'(["\'])(.*?)' + re.escape(placeholder) + r'(.*?)\1'
-        )
+        pat = re.compile(r'(["\'])(.*?)' + re.escape(placeholder) + r"(.*?)\1")
         new_params: list[str] = []
 
         def _replacer(m: re.Match, _val: str = val, _np: list = new_params) -> str:
@@ -146,9 +140,9 @@ async def query(
 
     # Split SQL at WHERE so each user's WHERE fragment can be built separately
     # and all fragments combined with OR into a single batched query.
-    _where_match = re.search(r'\bWHERE\b', query_config["query"], re.IGNORECASE)
-    select_part = query_config["query"][:_where_match.start()].rstrip() if _where_match else query_config["query"]
-    where_tmpl: str | None = query_config["query"][_where_match.end():].strip() if _where_match else None
+    _where_match = re.search(r"\bWHERE\b", query_config["query"], re.IGNORECASE)
+    select_part = query_config["query"][: _where_match.start()].rstrip() if _where_match else query_config["query"]
+    where_tmpl: str | None = query_config["query"][_where_match.end() :].strip() if _where_match else None
 
     # Phase 1: resolve each user (use_result + u-dict rebuild) and build
     # the per-user WHERE fragment with positional %s params.
@@ -198,13 +192,15 @@ async def query(
         else:
             frag_sql, frag_params = "", []
 
-        user_frags.append({
-            "orig_username": orig_username,
-            "effective_username": u["username"],
-            "force_prim_key": force_prim_key,
-            "frag_sql": frag_sql,
-            "frag_params": frag_params,
-        })
+        user_frags.append(
+            {
+                "orig_username": orig_username,
+                "effective_username": u["username"],
+                "force_prim_key": force_prim_key,
+                "frag_sql": frag_sql,
+                "frag_params": frag_params,
+            }
+        )
 
     if not user_frags:
         return userdata, user_to_pkey, error
@@ -247,8 +243,7 @@ async def query(
     # the input address), with a fallback to a direct primary-key field match.
     pkey_field = query_config.get("primary_key", "mail")
     effective_to_user: dict[str, tuple[str, Any]] = {
-        uf["effective_username"]: (uf["orig_username"], uf["force_prim_key"])
-        for uf in user_frags
+        uf["effective_username"]: (uf["orig_username"], uf["force_prim_key"]) for uf in user_frags
     }
     frag_param_to_user: dict[str, tuple[str, Any]] = {}
     for uf in user_frags:

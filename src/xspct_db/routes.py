@@ -184,7 +184,7 @@ def _prometheus_lines(s_stats: dict[str, Any]) -> str:
         for qk, qs in s_stats["queries"].items():
             _line(
                 "xspct_db_query_duration_seconds_total",
-                f'{qs["time_total"]:.6f}',
+                f"{qs['time_total']:.6f}",
                 {"query": qk},
             )
 
@@ -328,9 +328,7 @@ async def _run_with_queues(
             stats.stats["background_rejected"] += 1
             return None, True
         # Hand task to background finalizer.
-        bg_task = asyncio.create_task(
-            _finalize_background(s, task, bg_sem, bg_tasks)
-        )
+        bg_task = asyncio.create_task(_finalize_background(s, task, bg_sem, bg_tasks))
         bg_tasks.add(bg_task)
         return None, True
     finally:
@@ -361,6 +359,7 @@ def _rspamd_cache_key(rspamd_req: Any, cfg: dict[str, Any]) -> tuple:
 # Health endpoints
 # ---------------------------------------------------------------------------
 
+
 class HealthView(PydanticView):
     async def get(self) -> r200[dict]:
         """Service liveness check."""
@@ -376,6 +375,7 @@ class PingView(PydanticView):
 # ---------------------------------------------------------------------------
 # Metrics
 # ---------------------------------------------------------------------------
+
 
 class MetricsView(PydanticView):
     async def get(self) -> r200[str] | r401[ErrorResponse]:
@@ -410,6 +410,7 @@ class MetricsView(PydanticView):
 # ---------------------------------------------------------------------------
 # Query endpoints
 # ---------------------------------------------------------------------------
+
 
 class QueryView(PydanticView):
     async def get(self, user: str, /) -> r200[QueryResponse] | r401[ErrorResponse] | r500[ErrorResponse] | r504[ErrorResponse]:
@@ -490,25 +491,37 @@ class QueryView(PydanticView):
             stats.stats["requests_known"] += 1
             userdata["users"][user] = cache_object
             _body, _ctype = _serialize_body(userdata, fmt)
-            return _log_response(s, web.Response(
-                body=_body, content_type=_ctype, headers={"Connection": "Keep-Alive"},
-            ))
+            return _log_response(
+                s,
+                web.Response(
+                    body=_body,
+                    content_type=_ctype,
+                    headers={"Connection": "Keep-Alive"},
+                ),
+            )
 
         if isinstance(cache_object, bool) and not cache_object:
             stats.stats["requests_unknown"] += 1
             _body, _ctype = _serialize_body(userdata, fmt)
-            return _log_response(s, web.Response(
-                body=_body, content_type=_ctype, headers={"Connection": "Keep-Alive"},
-            ))
+            return _log_response(
+                s,
+                web.Response(
+                    body=_body,
+                    content_type=_ctype,
+                    headers={"Connection": "Keep-Alive"},
+                ),
+            )
 
         # --- Backend query ---
         user_parts = user.split("@", 1)
-        users = [{
-            "username": user,
-            "address": user,
-            "userpart": user_parts[0],
-            "domain": user_parts[-1],
-        }]
+        users = [
+            {
+                "username": user,
+                "address": user,
+                "userpart": user_parts[0],
+                "domain": user_parts[-1],
+            }
+        ]
 
         request_timeout = float(cfg.get("xspct_db_request_timeout", 0))
         timeout_header = cfg.get("xspct_db_request_timeout_header", "")
@@ -529,7 +542,8 @@ class QueryView(PydanticView):
 
         try:
             result, timed_out = await _run_with_queues(
-                self.request.app, s,
+                self.request.app,
+                s,
                 run_queries(s, user, use_redis, users, userdata, user_to_pkey, cfg),
                 request_timeout,
             )
@@ -550,9 +564,14 @@ class QueryView(PydanticView):
             stats.stats["requests_unknown"] += 1
 
         _body, _ctype = _serialize_body(userdata, fmt)
-        return _log_response(s, web.Response(
-            body=_body, content_type=_ctype, headers={"Connection": "Keep-Alive"},
-        ))
+        return _log_response(
+            s,
+            web.Response(
+                body=_body,
+                content_type=_ctype,
+                headers={"Connection": "Keep-Alive"},
+            ),
+        )
 
 
 class QueryJsonView(PydanticView):
@@ -611,9 +630,7 @@ class QueryJsonView(PydanticView):
             return _log_response(s, _invalid_body_response())
 
         try:
-            query_req = QueryJsonRequest.model_validate(
-                parsed_body if isinstance(parsed_body, dict) else {}
-            )
+            query_req = QueryJsonRequest.model_validate(parsed_body if isinstance(parsed_body, dict) else {})
         except ValidationError:
             return _log_response(s, _invalid_body_response())
 
@@ -635,19 +652,25 @@ class QueryJsonView(PydanticView):
         if cached is not None:
             stats.stats["response_cache_hits"] += 1
             cached_body, cached_ctype = cached
-            return _log_response(s, web.Response(
-                body=cached_body,
-                content_type=cached_ctype,
-                headers={"Connection": "Keep-Alive"},
-            ))
+            return _log_response(
+                s,
+                web.Response(
+                    body=cached_body,
+                    content_type=cached_ctype,
+                    headers={"Connection": "Keep-Alive"},
+                ),
+            )
         stats.stats["response_cache_misses"] += 1
 
-        users = [{
-            "username": u,
-            "address": u,
-            "userpart": u.split("@", 1)[0],
-            "domain": u.split("@", 1)[-1],
-        } for u in query_req.users]
+        users = [
+            {
+                "username": u,
+                "address": u,
+                "userpart": u.split("@", 1)[0],
+                "domain": u.split("@", 1)[-1],
+            }
+            for u in query_req.users
+        ]
 
         async def _qj_task() -> tuple[bytes, str, str | bool]:
             """Run backend queries and cache the response body."""
@@ -655,9 +678,7 @@ class QueryJsonView(PydanticView):
 
             userdata: dict[str, Any] = {"users": {}}
             user_to_pkey: dict[str, Any] = {}
-            userdata, user_to_pkey, query_error = await run_queries(
-                s, "", False, users, userdata, user_to_pkey, cfg
-            )
+            userdata, user_to_pkey, query_error = await run_queries(s, "", False, users, userdata, user_to_pkey, cfg)
             if isinstance(query_error, str):
                 return b"", "application/json", query_error
             body, ctype = _serialize_body(userdata, fmt)
@@ -667,7 +688,10 @@ class QueryJsonView(PydanticView):
         request_timeout = float(cfg.get("xspct_db_request_timeout", 0))
         try:
             result, timed_out = await _run_with_queues(
-                self.request.app, s, _qj_task(), request_timeout,
+                self.request.app,
+                s,
+                _qj_task(),
+                request_timeout,
             )
         except _ServiceOverloaded:
             return _log_response(s, web.Response(status=503, text="503 Service Overloaded"))
@@ -680,11 +704,14 @@ class QueryJsonView(PydanticView):
         if isinstance(query_error, str):
             return _log_response(s, web.Response(status=500, text=query_error))
 
-        return _log_response(s, web.Response(
-            body=response_body,
-            content_type=response_ctype,
-            headers={"Connection": "Keep-Alive"},
-        ))
+        return _log_response(
+            s,
+            web.Response(
+                body=response_body,
+                content_type=response_ctype,
+                headers={"Connection": "Keep-Alive"},
+            ),
+        )
 
 
 class RspamdSettingsView(PydanticView):
@@ -781,17 +808,18 @@ class RspamdSettingsView(PydanticView):
         if cached is not None:
             stats.stats["response_cache_hits"] += 1
             cached_body, cached_ctype = cached
-            return _log_response(s, web.Response(
-                body=cached_body,
-                content_type=cached_ctype,
-                headers={"Connection": "Keep-Alive"},
-            ))
+            return _log_response(
+                s,
+                web.Response(
+                    body=cached_body,
+                    content_type=cached_ctype,
+                    headers={"Connection": "Keep-Alive"},
+                ),
+            )
         stats.stats["response_cache_misses"] += 1
 
         # Look up all addresses from envelope sender + recipients
-        addresses = list(dict.fromkeys(
-            addr for addr in ([rspamd_req.from_addr] + rspamd_req.rcpts) if addr
-        ))
+        addresses = list(dict.fromkeys(addr for addr in ([rspamd_req.from_addr] + rspamd_req.rcpts) if addr))
 
         async def _rs_task() -> tuple[bytes, str]:
             """Run backend queries and build the Rspamd settings response."""
@@ -799,15 +827,17 @@ class RspamdSettingsView(PydanticView):
             user_to_pkey: dict[str, Any] = {}
             if addresses:
                 from xspct_db.backends import run_queries
-                users = [{
-                    "username": addr,
-                    "address": addr,
-                    "userpart": addr.split("@", 1)[0],
-                    "domain": addr.split("@", 1)[-1],
-                } for addr in addresses]
-                userdata, user_to_pkey, _ = await run_queries(
-                    s, "", False, users, userdata, user_to_pkey, cfg
-                )
+
+                users = [
+                    {
+                        "username": addr,
+                        "address": addr,
+                        "userpart": addr.split("@", 1)[0],
+                        "domain": addr.split("@", 1)[-1],
+                    }
+                    for addr in addresses
+                ]
+                userdata, user_to_pkey, _ = await run_queries(s, "", False, users, userdata, user_to_pkey, cfg)
             reply = RspamdSettingsResponse(
                 actions={"reject": 15, "greylist": 8, "add header": 13},
                 symbols_disabled=["DKIM_SIGNED"],
@@ -822,7 +852,10 @@ class RspamdSettingsView(PydanticView):
         request_timeout = float(cfg.get("xspct_db_request_timeout", 0))
         try:
             result, timed_out = await _run_with_queues(
-                self.request.app, s, _rs_task(), request_timeout,
+                self.request.app,
+                s,
+                _rs_task(),
+                request_timeout,
             )
         except _ServiceOverloaded:
             return _log_response(s, web.Response(status=503, text="503 Service Overloaded"))
@@ -831,16 +864,20 @@ class RspamdSettingsView(PydanticView):
             return _log_response(s, web.Response(status=504, text="504 Request Timeout"))
 
         result_body, result_ctype = result
-        return _log_response(s, web.Response(
-            body=result_body,
-            content_type=result_ctype,
-            headers={"Connection": "Keep-Alive"},
-        ))
+        return _log_response(
+            s,
+            web.Response(
+                body=result_body,
+                content_type=result_ctype,
+                headers={"Connection": "Keep-Alive"},
+            ),
+        )
 
 
 # ---------------------------------------------------------------------------
 # Route registration
 # ---------------------------------------------------------------------------
+
 
 def setup_routes(app: web.Application) -> None:
     """Register all route views on *app*."""

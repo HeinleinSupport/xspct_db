@@ -42,6 +42,7 @@ LDAP_CFG: dict[str, Any] = {
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_bonsai_mock() -> MagicMock:
     """Return a minimal mock of the bonsai module."""
     mock = MagicMock()
@@ -68,6 +69,7 @@ def _make_pool(conn: AsyncMock) -> MagicMock:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def reset_pools():
     ldap_backend._pools.clear()
@@ -84,15 +86,19 @@ def reset_stats():
 # Tests – query()
 # ---------------------------------------------------------------------------
 
+
 async def test_query_bonsai_not_installed():
     """query() returns a 500 error string when bonsai cannot be imported."""
     with pytest.MonkeyPatch().context() as mp:
         mp.setitem(sys.modules, "bonsai", None)
         mp.setitem(sys.modules, "bonsai.asyncio", None)
         _, _, error = await ldap_backend.query(
-            "s", "ldap_users",
+            "s",
+            "ldap_users",
             [{"username": "alice@mailexample.de"}],
-            {"users": {}}, {}, LDAP_CFG,
+            {"users": {}},
+            {},
+            LDAP_CFG,
         )
     assert isinstance(error, str) and "500" in error
 
@@ -104,9 +110,12 @@ async def test_query_invalid_query_name():
         mp.setitem(sys.modules, "bonsai", bonsai_mock)
         mp.setitem(sys.modules, "bonsai.asyncio", bonsai_mock)
         _, _, error = await ldap_backend.query(
-            "s", "nonexistent",
+            "s",
+            "nonexistent",
             [{"username": "alice@mailexample.de"}],
-            {"users": {}}, {}, LDAP_CFG,
+            {"users": {}},
+            {},
+            LDAP_CFG,
         )
     assert isinstance(error, str) and "500" in error
 
@@ -118,9 +127,12 @@ async def test_query_pool_not_initialised():
         mp.setitem(sys.modules, "bonsai", bonsai_mock)
         mp.setitem(sys.modules, "bonsai.asyncio", bonsai_mock)
         _, _, error = await ldap_backend.query(
-            "s", "ldap_users",
+            "s",
+            "ldap_users",
             [{"username": "alice@mailexample.de"}],
-            {"users": {}}, {}, LDAP_CFG,
+            {"users": {}},
+            {},
+            LDAP_CFG,
         )
     assert isinstance(error, str) and "500" in error
 
@@ -129,18 +141,23 @@ async def test_query_success():
     """query() merges LDAP search results into userdata on success."""
     bonsai_mock = _make_bonsai_mock()
     conn = AsyncMock()
-    conn.search = AsyncMock(return_value=[
-        {"mail": "alice@mailexample.de", "uid": "alice"},
-    ])
+    conn.search = AsyncMock(
+        return_value=[
+            {"mail": "alice@mailexample.de", "uid": "alice"},
+        ]
+    )
     ldap_backend._pools["ldap_users"] = _make_pool(conn)
 
     with pytest.MonkeyPatch().context() as mp:
         mp.setitem(sys.modules, "bonsai", bonsai_mock)
         mp.setitem(sys.modules, "bonsai.asyncio", bonsai_mock)
         result_ud, result_u2p, error = await ldap_backend.query(
-            "s", "ldap_users",
+            "s",
+            "ldap_users",
             [{"username": "alice@mailexample.de"}],
-            {"users": {}}, {}, LDAP_CFG,
+            {"users": {}},
+            {},
+            LDAP_CFG,
         )
 
     assert error is False
@@ -160,9 +177,12 @@ async def test_query_ldap_error_during_search():
         mp.setitem(sys.modules, "bonsai", bonsai_mock)
         mp.setitem(sys.modules, "bonsai.asyncio", bonsai_mock)
         _, _, error = await ldap_backend.query(
-            "s", "ldap_users",
+            "s",
+            "ldap_users",
             [{"username": "alice@mailexample.de"}],
-            {"users": {}}, {}, LDAP_CFG,
+            {"users": {}},
+            {},
+            LDAP_CFG,
         )
 
     assert isinstance(error, str) and "500" in error
@@ -182,9 +202,12 @@ async def test_query_connection_error():
         mp.setitem(sys.modules, "bonsai", bonsai_mock)
         mp.setitem(sys.modules, "bonsai.asyncio", bonsai_mock)
         _, _, error = await ldap_backend.query(
-            "s", "ldap_users",
+            "s",
+            "ldap_users",
             [{"username": "alice@mailexample.de"}],
-            {"users": {}}, {}, LDAP_CFG,
+            {"users": {}},
+            {},
+            LDAP_CFG,
         )
 
     assert isinstance(error, str) and "500" in error
@@ -193,6 +216,7 @@ async def test_query_connection_error():
 # ---------------------------------------------------------------------------
 # Tests – create_pools() / close_pools()
 # ---------------------------------------------------------------------------
+
 
 async def test_create_pools_skips_non_ldap_queries():
     """create_pools() ignores queries whose db_type is not 'ldap'."""
@@ -227,10 +251,12 @@ async def test_query_multiple_users_batched():
     """Multiple users are combined into a single LDAP search with an OR filter."""
     bonsai_mock = _make_bonsai_mock()
     conn = AsyncMock()
-    conn.search = AsyncMock(return_value=[
-        {"mail": "alice@mailexample.de", "uid": "alice"},
-        {"mail": "bob@mailexample.de", "uid": "bob"},
-    ])
+    conn.search = AsyncMock(
+        return_value=[
+            {"mail": "alice@mailexample.de", "uid": "alice"},
+            {"mail": "bob@mailexample.de", "uid": "bob"},
+        ]
+    )
     ldap_backend._pools["ldap_users"] = _make_pool(conn)
 
     cfg_with_replace = {
@@ -262,7 +288,12 @@ async def test_query_multiple_users_batched():
         mp.setitem(sys.modules, "bonsai", bonsai_mock)
         mp.setitem(sys.modules, "bonsai.asyncio", bonsai_mock)
         ud, u2p, error = await ldap_backend.query(
-            "s", "ldap_users", users, {"users": {}}, {}, cfg_with_replace,
+            "s",
+            "ldap_users",
+            users,
+            {"users": {}},
+            {},
+            cfg_with_replace,
         )
 
     assert error is False
@@ -280,6 +311,7 @@ async def test_query_multiple_users_batched():
 # Tests – third attribution fallback (frag_values)
 # ---------------------------------------------------------------------------
 
+
 async def test_query_attribution_via_frag_values():
     """Third fallback: user is attributed when effective_username appears in frag_values.
 
@@ -295,9 +327,11 @@ async def test_query_attribution_via_frag_values():
     # Row: primary key is different from the input username, but the input
     # username appears in a secondary attribute (mailLocalAddress), so the
     # first fallback (effective_username in row_values) fires.
-    conn.search = AsyncMock(return_value=[
-        {"mail": "cr-primary@mailexample.de", "mailLocalAddress": "cr@mailexample.de"},
-    ])
+    conn.search = AsyncMock(
+        return_value=[
+            {"mail": "cr-primary@mailexample.de", "mailLocalAddress": "cr@mailexample.de"},
+        ]
+    )
     ldap_backend._pools["ldap_users"] = _make_pool(conn)
 
     cfg_with_replace = {
@@ -317,7 +351,12 @@ async def test_query_attribution_via_frag_values():
         mp.setitem(sys.modules, "bonsai", bonsai_mock)
         mp.setitem(sys.modules, "bonsai.asyncio", bonsai_mock)
         ud, u2p, error = await ldap_backend.query(
-            "s", "ldap_users", users, {"users": {}}, {}, cfg_with_replace,
+            "s",
+            "ldap_users",
+            users,
+            {"users": {}},
+            {},
+            cfg_with_replace,
         )
 
     assert error is False

@@ -11,9 +11,7 @@ import timeit
 from typing import Any
 
 # Per-async-task request start time (safe for concurrent requests).
-_time_start_var: contextvars.ContextVar[float] = contextvars.ContextVar(
-    "time_start", default=0.0
-)
+_time_start_var: contextvars.ContextVar[float] = contextvars.ContextVar("time_start", default=0.0)
 
 
 class _LazyTimer:
@@ -70,10 +68,7 @@ def dict_merge(d1: Any, d2: Any) -> Any:
         return {
             **d1,
             **d2,
-            **{
-                k: d1[k] if d1[k] == d2[k] else dict_merge(d1[k], d2[k])
-                for k in set(d1) & set(d2)
-            },
+            **{k: d1[k] if d1[k] == d2[k] else dict_merge(d1[k], d2[k]) for k in set(d1) & set(d2)},
         }
     return [
         *(d1 if isinstance(d1, list) else [d1]),

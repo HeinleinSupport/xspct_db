@@ -33,6 +33,7 @@ def _cfg(
 # verify_api_key
 # ---------------------------------------------------------------------------
 
+
 def test_correct_key_accepted():
     assert verify_api_key("s", "correct-key", _cfg()) is True
 
@@ -59,6 +60,7 @@ def test_permissive_mode_accepts_wrong_key():
 # ---------------------------------------------------------------------------
 # verify_metrics_auth
 # ---------------------------------------------------------------------------
+
 
 def _mock_request(api_key: str | None = None, auth_header: str | None = None) -> MagicMock:
     req = MagicMock()
