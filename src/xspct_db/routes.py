@@ -17,7 +17,7 @@ from aiohttp_pydantic import PydanticView
 from aiohttp_pydantic.oas.typing import r200, r401, r500, r504
 from pydantic import ValidationError
 
-from xspct_db import cache, stats
+from xspct_db import cache, prefilter, stats
 from xspct_db.auth import verify_api_key, verify_metrics_auth
 from xspct_db.schemas import (
     ErrorResponse,
@@ -165,6 +165,21 @@ def _prometheus_lines(s_stats: dict[str, Any]) -> str:
         ("xspct_db_background_completed_total", "background_completed", "Background tasks completed", "counter"),
         ("xspct_db_background_rejected_total", "background_rejected", "Background tasks rejected (no slot)", "counter"),
         ("xspct_db_background_errors_total", "background_errors", "Background tasks that raised errors", "counter"),
+        (
+            "xspct_db_prefilter_domain_count",
+            "prefilter_domain_count",
+            "Current number of domains in the prefilter set",
+            "gauge",
+        ),
+        ("xspct_db_prefilter_domain_hits_total", "prefilter_domain_hits", "Addresses allowed by domain filter", "counter"),
+        ("xspct_db_prefilter_domain_misses_total", "prefilter_domain_misses", "Addresses blocked by domain filter", "counter"),
+        ("xspct_db_prefilter_pattern_hits_total", "prefilter_pattern_hits", "Addresses allowed by pattern filter", "counter"),
+        (
+            "xspct_db_prefilter_pattern_misses_total",
+            "prefilter_pattern_misses",
+            "Addresses blocked by pattern filter",
+            "counter",
+        ),
     ):
         lines += [f"# HELP {metric} {help_text}", f"# TYPE {metric} {mtype}"]
         _line(metric, s_stats[stat_key])
@@ -463,6 +478,19 @@ class QueryView(PydanticView):
 
         fmt = _detect_response_format(self.request)
         user = unquote(user)
+
+        if not prefilter.filter_user(s, user, self.request.app):
+            stats.stats["requests_unknown"] += 1
+            _body, _ctype = _serialize_body({"users": {}}, fmt)
+            return _log_response(
+                s,
+                web.Response(
+                    body=_body,
+                    content_type=_ctype,
+                    headers={"Connection": "Keep-Alive"},
+                ),
+            )
+
         userdata: dict[str, Any] = {"users": {}}
         user_to_pkey: dict[str, Any] = {}
         use_redis = cfg["xspct_db_redis_cache"]["enabled"] and cache.connection is not None
@@ -644,10 +672,24 @@ class QueryJsonView(PydanticView):
             logger.warning("%s - query-json user count %d exceeds limit %d", s, len(query_req.users), max_users)
             return _log_response(s, web.Response(status=400, text="400 Bad Request: too many users"))
 
+        # Apply prefilter
+        filtered_users = prefilter.filter_addresses(s, list(query_req.users), self.request.app)
+        if not filtered_users:
+            logger.debug("%s prefilter: all users filtered out, returning empty result", s)
+            _body, _ctype = _serialize_body({"users": {}}, _detect_response_format(self.request))
+            return _log_response(
+                s,
+                web.Response(
+                    body=_body,
+                    content_type=_ctype,
+                    headers={"Connection": "Keep-Alive"},
+                ),
+            )
+
         fmt = _detect_response_format(self.request)
 
         # --- Response cache lookup ---
-        response_cache_key = ("query-json", tuple(sorted(query_req.users)), fmt)
+        response_cache_key = ("query-json", tuple(sorted(filtered_users)), fmt)
         cached = cache.get_response(response_cache_key, cfg)
         if cached is not None:
             stats.stats["response_cache_hits"] += 1
@@ -669,7 +711,7 @@ class QueryJsonView(PydanticView):
                 "userpart": u.split("@", 1)[0],
                 "domain": u.split("@", 1)[-1],
             }
-            for u in query_req.users
+            for u in filtered_users
         ]
 
         async def _qj_task() -> tuple[bytes, str, str | bool]:
@@ -820,6 +862,7 @@ class RspamdSettingsView(PydanticView):
 
         # Look up all addresses from envelope sender + recipients
         addresses = list(dict.fromkeys(addr for addr in ([rspamd_req.from_addr] + rspamd_req.rcpts) if addr))
+        addresses = prefilter.filter_addresses(s, addresses, self.request.app)
 
         async def _rs_task() -> tuple[bytes, str]:
             """Run backend queries and build the Rspamd settings response."""

@@ -117,6 +117,47 @@ xspct_db_redis_cache:
   max_errors: 2        # trip circuit-breaker after this many consecutive errors
 
 # ---------------------------------------------------------------------------
+# Prefilter — drop addresses before any cache or backend lookup
+# The master switch must be enabled; each sub-filter has its own enabled flag.
+# Filtered addresses are silently dropped; requests with no remaining addresses
+# return 200 with an empty {"users": {}} body.
+# ---------------------------------------------------------------------------
+xspct_db_prefilter:
+  enabled: false        # master switch — set true to activate prefiltering
+
+# Domain whitelist: only addresses whose domain is in the set are forwarded.
+xspct_db_prefilter_domains:
+  enabled: false
+
+  # --- Sources (all merged at load time) ---
+  inline: []            # list of domains directly in the config
+    #- mailexample.de
+    #- example.org
+  file: ""              # path to a plain-text file (one domain per line, # = comment)
+    #file: /etc/xspct-db-domains.txt
+  file_reload_interval: 60  # seconds between file mtime checks (0 = disabled)
+
+  redis_key: ""         # Redis SET key to load with SMEMBERS
+    #redis_key: xspct_db_domains
+  redis_channel: ""     # pub/sub channel; PUBLISH here triggers an immediate reload
+    #redis_channel: xspct_db_prefilter_reload
+  redis_reload_interval: 300  # safety-net interval in seconds (0 = pub/sub only)
+
+  # --- Safety guards ---
+  min_domains: 0        # refuse a reload that yields fewer than this many domains;
+                        # 0 = no guard.  Keeps the previous set on failure (last-known-good).
+  max_age: 0            # seconds before an un-refreshed set is dropped and bypassed;
+                        # 0 = never expire.  Set to at least 2× the reload interval.
+
+# Pattern filter: only addresses matching at least one regex are forwarded.
+# Python re.search() syntax; compiled once at startup.
+xspct_db_prefilter_patterns:
+  enabled: false
+  patterns: []
+    #- "@mailexample\\.de$"
+    #- "^postmaster@"
+
+# ---------------------------------------------------------------------------
 # Queries — one entry per named backend
 # ---------------------------------------------------------------------------
 xspct_db_queries:

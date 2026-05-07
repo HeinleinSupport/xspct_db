@@ -60,6 +60,10 @@ async def _on_startup(app: web.Application) -> None:
 
     app["_stats_task"] = asyncio.create_task(stats.log_stats_periodically(cfg))
 
+    from xspct_db import prefilter
+
+    await prefilter.start(app, cfg)
+
     # Foreground / background query semaphores
     app["fg_sem"] = asyncio.Semaphore(int(cfg.get("xspct_db_foreground_slots", 30)))
     app["bg_sem"] = asyncio.Semaphore(int(cfg.get("xspct_db_background_slots", 5)))
@@ -68,6 +72,10 @@ async def _on_startup(app: web.Application) -> None:
 
 async def _on_shutdown(app: web.Application) -> None:
     cfg: dict[str, Any] = app["config"]
+
+    from xspct_db import prefilter
+
+    await prefilter.stop(app)
 
     # Stop the periodic stats task.
     stats_task: asyncio.Task | None = app.get("_stats_task")

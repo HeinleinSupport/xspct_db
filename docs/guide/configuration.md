@@ -134,6 +134,96 @@ xspct_db_redis_cache:
   max_errors: 2        # disable cache after this many consecutive errors
 ```
 
+## Prefilter
+
+The prefilter rejects addresses at the HTTP handler level, *before* any cache or backend
+lookup.  Filtered addresses are silently dropped; if all addresses in a request are
+filtered the endpoint returns `200` with an empty `{"users": {}}` body.
+
+There are two independent sub-filters, each with its own `enabled` switch, plus a master
+switch (`xspct_db_prefilter.enabled`) that disables both sub-filters at once.
+
+### Master switch
+
+```yaml
+xspct_db_prefilter:
+  enabled: false   # set to true to activate prefiltering
+```
+
+### Domain filter
+
+Maintains a `frozenset` of allowed domains.  An address is **kept** only when its
+domain part (`user@**domain**`) is in the set.  Plain usernames without `@` are matched
+against the whole string.
+
+```yaml
+xspct_db_prefilter_domains:
+  enabled: false
+
+  # --- Sources ---
+  inline: []                # list of domain strings directly in the config
+  file: ""                  # path to a plain-text file (one domain per line, # = comment)
+  file_reload_interval: 60  # seconds between file mtime checks (0 = disabled)
+
+  redis_key: ""             # Redis SET key to fetch with SMEMBERS
+  redis_channel: ""         # Redis pub/sub channel; PUBLISH triggers an immediate reload
+  redis_reload_interval: 300  # safety-net interval in seconds (0 = pub/sub only)
+
+  # --- Safety guards ---
+  min_domains: 0   # minimum valid set size; 0 = no guard
+  max_age: 0       # seconds after which an unrefreshed set is discarded; 0 = never expire
+```
+
+**File format** — one domain per line, leading/trailing whitespace stripped,
+lines beginning with `#` (after stripping) and blank lines are ignored:
+
+```text
+# Allowed local domains
+mailexample.de
+example.org
+```
+
+**Redis setup**
+
+```bash
+# Populate the set
+redis-cli SADD xspct_db_domains mailexample.de example.org
+
+# Signal a reload (optional pub/sub channel)
+redis-cli PUBLISH xspct_db_prefilter_reload 1
+```
+
+**State machine**
+
+| State | Condition | Behaviour |
+|-------|-----------|-----------|
+| **BYPASS** | No valid set loaded yet | All addresses pass (filter inactive) |
+| **ACTIVE** | Valid set present | Only addresses with a known domain pass |
+| **EXPIRED** | `max_age > 0` and set age exceeds `max_age` | Falls back to BYPASS; WARNING logged once |
+
+A reload that produces a set below `min_domains` is discarded — the previous
+valid set is kept (*last-known-good*).  If no previous set exists the filter
+stays in BYPASS and logs an ERROR.
+
+> **Warning:** Set `max_age` to at least twice the smallest reload interval
+> (`file_reload_interval` or `redis_reload_interval`) to avoid the set expiring
+> between refresh cycles.
+
+### Pattern filter
+
+Keeps only addresses that match **at least one** of the configured regular
+expressions (Python `re` syntax, applied with `re.search`).
+
+```yaml
+xspct_db_prefilter_patterns:
+  enabled: false
+  patterns:
+    - "@mailexample\\.de$"
+    - "^postmaster@"
+```
+
+Patterns are compiled once at startup.  Invalid patterns are logged and skipped.
+
 ## Queries
 
 Each entry under `xspct_db_queries` defines one named query.

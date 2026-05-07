@@ -31,6 +31,12 @@ stats: dict[str, Any] = {
     "background_completed": 0,
     "background_rejected": 0,
     "background_errors": 0,
+    # prefilter counters/gauge
+    "prefilter_domain_count": 0,
+    "prefilter_domain_hits": 0,
+    "prefilter_domain_misses": 0,
+    "prefilter_pattern_hits": 0,
+    "prefilter_pattern_misses": 0,
     # per-query timing: {qk: {count, time_total, time_min, time_max}}
     "queries": {},
     # per-pool connection samples: {pool_key: {min, max, sum, count, limit}}
@@ -55,6 +61,10 @@ def reset() -> None:
     stats["background_completed"] = 0
     stats["background_rejected"] = 0
     stats["background_errors"] = 0
+    stats["prefilter_domain_hits"] = 0
+    stats["prefilter_domain_misses"] = 0
+    stats["prefilter_pattern_hits"] = 0
+    stats["prefilter_pattern_misses"] = 0
     stats["queries"].clear()
     stats["pool_connections"].clear()
 
@@ -165,6 +175,34 @@ def log_stats(cfg: dict[str, Any]) -> None:
             redis_neg_hits,
             hit_rate,
         )
+
+    # Prefilter counters
+    if cfg.get("xspct_db_prefilter", {}).get("enabled", False):
+        dcfg = cfg.get("xspct_db_prefilter_domains", {})
+        if dcfg.get("enabled", False):
+            d_hits = stats["prefilter_domain_hits"]
+            d_misses = stats["prefilter_domain_misses"]
+            d_total = d_hits + d_misses
+            d_rate = (d_hits / d_total * 100) if d_total > 0 else 0.0
+            logger.info(
+                "STATS prefilter_domains count=%d hits=%d misses=%d hit_rate=%.1f%%",
+                stats["prefilter_domain_count"],
+                d_hits,
+                d_misses,
+                d_rate,
+            )
+        pcfg = cfg.get("xspct_db_prefilter_patterns", {})
+        if pcfg.get("enabled", False):
+            p_hits = stats["prefilter_pattern_hits"]
+            p_misses = stats["prefilter_pattern_misses"]
+            p_total = p_hits + p_misses
+            p_rate = (p_hits / p_total * 100) if p_total > 0 else 0.0
+            logger.info(
+                "STATS prefilter_patterns hits=%d misses=%d hit_rate=%.1f%%",
+                p_hits,
+                p_misses,
+                p_rate,
+            )
 
     # Connection snapshot line
     conn_parts: list[str] = []
