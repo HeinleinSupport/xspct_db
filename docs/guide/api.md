@@ -178,7 +178,7 @@ listed in `xspct_db_response_cache.rspamd_key_fields`.
   "groups_disabled": [],
   "symbols_disabled": ["DKIM_SIGNED"],
   "symbols": ["SETTINGS_API_TEST_RESPONSE"],
-  "settings_extra_data": {
+  "settings_data": {
     "users": {
       "sender@mailexample.de": {
         "mail": "sender@mailexample.de",
@@ -194,7 +194,7 @@ listed in `xspct_db_response_cache.rspamd_key_fields`.
 
 Fields with `null` values (`groups_enabled`, `symbols_enabled`) are omitted from the response (`exclude_none=True`).
 
-`settings_extra_data` contains all users found for the envelope addresses (sender + recipients)
+`settings_data` contains all users found for the envelope addresses (sender + recipients)
 mapped by primary key, plus a reverse alias map.  It is an empty object when no users are found.
 `settings_error` contains any error messages produced during settings evaluation.
 

@@ -31,11 +31,11 @@ from xspct_db.utils import add_rspamd_id, generate_session_id, timer
 logger = logging.getLogger(__name__)
 
 
-def _build_settings_extra_data(
+def _build_settings_data(
     userdata: dict[str, Any],
     cfg: dict[str, Any],
 ) -> dict[str, Any]:
-    """Build the structured ``settings_extra_data`` block.
+    """Build the structured ``settings_data`` block.
 
     Returns ``{"users": {...}, "aliases": {...}}`` where ``aliases`` is a
     reverse map of alias-value → primary-key, built from the fields named in
@@ -719,7 +719,7 @@ class RspamdSettingsView(PydanticView):
                 "groups_disabled": [],
                 "symbols_disabled": ["DKIM_SIGNED"],
                 "symbols": ["SETTINGS_API_TEST_RESPONSE"],
-                "settings_extra_data": {
+                "settings_data": {
                     "users": {
                         "alice@mailexample.de": {
                             "mail": "alice@mailexample.de",
@@ -812,7 +812,7 @@ class RspamdSettingsView(PydanticView):
                 actions={"reject": 15, "greylist": 8, "add header": 13},
                 symbols_disabled=["DKIM_SIGNED"],
                 symbols=["SETTINGS_API_TEST_RESPONSE"],
-                settings_extra_data=_build_settings_extra_data(userdata, cfg),
+                settings_data=_build_settings_data(userdata, cfg),
                 settings_error=[],
             )
             body, ctype = _serialize_body(reply.model_dump(exclude_none=True), fmt)

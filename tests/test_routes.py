@@ -115,7 +115,7 @@ async def test_rspamd_settings_valid(app_client):
     assert "flags" in data
 
 
-async def test_rspamd_settings_empty_body_has_settings_extra_data(app_client):
+async def test_rspamd_settings_empty_body_has_settings_data(app_client):
     resp = await app_client.post(
         "/v1/rspamd-settings",
         data=json.dumps({}),
@@ -123,12 +123,12 @@ async def test_rspamd_settings_empty_body_has_settings_extra_data(app_client):
     )
     assert resp.status == 200
     data = json.loads(await resp.text())
-    assert "settings_extra_data" in data
-    assert data["settings_extra_data"] == {}
+    assert "settings_data" in data
+    assert data["settings_data"] == {}
 
 
 async def test_rspamd_settings_with_body(yaml_app_client):
-    """from + rcpts addresses are looked up and returned in settings_extra_data."""
+    """from + rcpts addresses are looked up and returned in settings_data."""
     resp = await yaml_app_client.post(
         "/v1/rspamd-settings",
         data=json.dumps({
@@ -140,9 +140,9 @@ async def test_rspamd_settings_with_body(yaml_app_client):
     )
     assert resp.status == 200
     data = json.loads(await resp.text())
-    assert "settings_extra_data" in data
+    assert "settings_data" in data
     # alice should be found; nobody should not appear or be empty
-    extra = data["settings_extra_data"]
+    extra = data["settings_data"]
     assert "users" in extra
     assert any("alice" in str(v) for v in extra["users"].values())
 
@@ -159,8 +159,8 @@ async def test_rspamd_settings_deduplication(yaml_app_client):
     )
     assert resp.status == 200
     data = json.loads(await resp.text())
-    # alice must appear at most once in settings_extra_data
-    alice_keys = [k for k in data["settings_extra_data"].get("users", {}) if "alice" in k]
+    # alice must appear at most once in settings_data
+    alice_keys = [k for k in data["settings_data"].get("users", {}) if "alice" in k]
     assert len(alice_keys) <= 1
 
 

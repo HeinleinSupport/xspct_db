@@ -62,7 +62,7 @@ class RspamdSettingsResponse(BaseModel):
     symbols: list[str] = Field(
         default_factory=list, description="Rspamd symbols to force."
     )
-    settings_extra_data: dict[str, Any] = Field(
+    settings_data: dict[str, Any] = Field(
         default_factory=dict,
         description="Structured user/alias data for addresses found in from/rcpts.",
     )
