@@ -69,6 +69,8 @@ dev = [
   "aioresponses>=0.7",
   "fakeredis>=2.23",
   "ruff>=0.4",
+  "reuse>=4.0",
+  "cyclonedx-bom>=5.0",
 ]
 docs = [
   "sphinx>=7.0",
@@ -87,6 +89,12 @@ Issues = "https://github.com/HeinleinSupport/xspct_db/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/xspct_db"]
+
+[tool.hatch.envs.default.scripts]
+# Generate dependency SBOM (CycloneDX JSON) from the active virtualenv.
+# Install .[all,dev] first for full optional-backend coverage.
+sbom-deps = "cyclonedx-py environment --of JSON -o bom.json"
+sbom = ["sbom-deps"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
