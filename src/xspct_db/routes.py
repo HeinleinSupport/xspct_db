@@ -469,6 +469,7 @@ def _compute_rcpt_settings(
         computed = min(translated_values)
         if computed != reject_level_default:
             actions["reject"] = computed
+            fired_rules.append(f"reject({computed})")
 
     return {
         "actions": actions,
@@ -987,6 +988,8 @@ class RspamdSettingsView(PydanticView):
             sd = _build_settings_data(userdata, cfg)
             if sd:
                 sd["profile"] = {"applied_rules": fired_rules}
+            elif fired_rules:
+                sd = {"profile": {"applied_rules": fired_rules}}
             reply = RspamdSettingsResponse(
                 **computed,
                 settings_data=sd,
