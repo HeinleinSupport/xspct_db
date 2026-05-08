@@ -102,11 +102,14 @@ def _detect_response_format(request: web.Request) -> str:
     for part in accept.split(","):
         mime = part.split(";", 1)[0].strip().lower()
         if mime in _MSGPACK_MIMES:
-            return "msgpack"
+            if _msgpack is not None:
+                return "msgpack"
+            # msgpack not installed – continue to next Accept entry
+            continue
         if mime == "application/json":
             return "json"
     ct = request.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
-    if ct in _MSGPACK_MIMES:
+    if ct in _MSGPACK_MIMES and _msgpack is not None:
         return "msgpack"
     return "json"
 
@@ -132,88 +135,16 @@ def _serialize_body(data: Any, fmt: str) -> tuple[bytes, str]:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-# Short-lived cache for Prometheus text output (rebuilt at most once per TTL).
-_PROMETHEUS_CACHE_TTL: float = 5.0
-_prometheus_cache: str | None = None
-_prometheus_cache_time: float = 0.0
-
-
-def _prometheus_lines(s_stats: dict[str, Any]) -> str:
-    """Render the current stats dict as a Prometheus text payload."""
-    lines: list[str] = []
-
-    def _line(name: str, value: Any, labels: dict[str, str] | None = None) -> None:
-        if labels:
-            label_str = ",".join(f'{k}="{v}"' for k, v in labels.items())
-            lines.append(f"{name}{{{label_str}}} {value}")
-        else:
-            lines.append(f"{name} {value}")
-
-    for metric, stat_key, help_text, mtype in (
-        ("xspct_db_requests_total", "requests_total", "Total client requests", "counter"),
-        ("xspct_db_requests_known_total", "requests_known", "Requests where user was found", "counter"),
-        ("xspct_db_requests_unknown_total", "requests_unknown", "Requests where user was not found", "counter"),
-        ("xspct_db_local_cache_hits_total", "local_cache_hits", "Local in-process cache hits", "counter"),
-        ("xspct_db_local_cache_misses_total", "local_cache_misses", "Local in-process cache misses", "counter"),
-        ("xspct_db_response_cache_hits_total", "response_cache_hits", "Response cache hits", "counter"),
-        ("xspct_db_response_cache_misses_total", "response_cache_misses", "Response cache misses", "counter"),
-        ("xspct_db_redis_hits_total", "redis_hits", "Redis cache hits", "counter"),
-        ("xspct_db_redis_misses_total", "redis_misses", "Redis cache misses", "counter"),
-        ("xspct_db_redis_negative_hits_total", "redis_negative_hits", "Redis negative cache hits", "counter"),
-        ("xspct_db_foreground_overloaded_total", "foreground_overloaded", "Foreground slot acquire failures", "counter"),
-        ("xspct_db_requests_timeout_total", "requests_timeout", "Requests that exceeded timeout", "counter"),
-        ("xspct_db_background_completed_total", "background_completed", "Background tasks completed", "counter"),
-        ("xspct_db_background_rejected_total", "background_rejected", "Background tasks rejected (no slot)", "counter"),
-        ("xspct_db_background_errors_total", "background_errors", "Background tasks that raised errors", "counter"),
-        (
-            "xspct_db_prefilter_domain_count",
-            "prefilter_domain_count",
-            "Current number of domains in the prefilter set",
-            "gauge",
-        ),
-        ("xspct_db_prefilter_domain_hits_total", "prefilter_domain_hits", "Addresses allowed by domain filter", "counter"),
-        ("xspct_db_prefilter_domain_misses_total", "prefilter_domain_misses", "Addresses blocked by domain filter", "counter"),
-        ("xspct_db_prefilter_pattern_hits_total", "prefilter_pattern_hits", "Addresses allowed by pattern filter", "counter"),
-        (
-            "xspct_db_prefilter_pattern_misses_total",
-            "prefilter_pattern_misses",
-            "Addresses blocked by pattern filter",
-            "counter",
-        ),
-    ):
-        lines += [f"# HELP {metric} {help_text}", f"# TYPE {metric} {mtype}"]
-        _line(metric, s_stats[stat_key])
-
-    if s_stats["queries"]:
-        lines += [
-            "# HELP xspct_db_query_requests_total Queries executed per backend",
-            "# TYPE xspct_db_query_requests_total counter",
-        ]
-        for qk, qs in s_stats["queries"].items():
-            _line("xspct_db_query_requests_total", qs["count"], {"query": qk})
-
-        lines += [
-            "# HELP xspct_db_query_duration_seconds_total Accumulated query time per backend",
-            "# TYPE xspct_db_query_duration_seconds_total counter",
-        ]
-        for qk, qs in s_stats["queries"].items():
-            _line(
-                "xspct_db_query_duration_seconds_total",
-                f"{qs['time_total']:.6f}",
-                {"query": qk},
-            )
-
-    return "\n".join(lines) + "\n"
-
 
 def _log_response(s: str, response: web.Response) -> web.Response:
-    """Log response status and body at DEBUG level, then return the response unchanged."""
+    """Log response status, headers, and body at DEBUG level, then return the response unchanged."""
     if logger.isEnabledFor(logging.DEBUG):
         try:
             body = response.text
         except Exception:
             body = None
-        logger.debug("%s ← %d  body=%s", s, response.status, body)
+        headers = dict(response.headers)
+        logger.debug("%s ← %d  headers=%s  body=%s", s, response.status, headers, body)
     return response
 
 
@@ -381,6 +312,7 @@ _DEFAULT_RSPAMD_RULES: list[dict[str, Any]] = [
         "aggregation": "all",
         "apply": {
             "symbols_disabled": ["GREYLIST_CHECK", "GREYLIST_SAVE", "GREYLIST"],
+            "symbols": {"SETTINGS_GREYLIST_DISABLED": 0.0},
             "actions": {"greylist": "null"},
         },
     },

@@ -198,6 +198,14 @@ def run(config_path: str) -> None:
         asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
         logger.info("uvloop event loop policy active")
 
+    try:
+        import msgpack as _msgpack  # noqa: F401
+    except ImportError:
+        logger.warning(
+            "msgpack library not installed – clients requesting application/msgpack "
+            "will receive JSON instead. Install with: pip install 'xspct-db[msgpack]'"
+        )
+
     async def _run() -> None:
         app = create_app(config)
         runner = web.AppRunner(app, backlog=int(config["xspct_db_listen_backlog"]))
