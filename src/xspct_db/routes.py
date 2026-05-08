@@ -138,10 +138,15 @@ def _serialize_body(data: Any, fmt: str) -> tuple[bytes, str]:
 def _log_response(s: str, response: web.Response) -> web.Response:
     """Log response status, headers, and body at DEBUG level, then return the response unchanged."""
     if logger.isEnabledFor(logging.DEBUG):
+        ct = response.content_type or ""
+        body: Any = None
         try:
-            body = response.text
+            if ct in _MSGPACK_MIMES and _msgpack is not None and response.body:
+                body = _msgpack.unpackb(response.body, raw=False)
+            else:
+                body = response.text
         except Exception:
-            body = None
+            body = f"<{len(response.body or b'')} bytes>"
         headers = dict(response.headers)
         logger.debug("%s ← %d  headers=%s  body=%s", s, response.status, headers, body)
     return response

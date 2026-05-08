@@ -38,11 +38,14 @@ def setup_metrics(app: web.Application, registry: Any = None) -> None:
 
     try:
         from prometheus_client import REGISTRY as _DEFAULT_REG  # noqa: F401
-    except ImportError as exc:
-        raise ImportError(
-            "prometheus-client is required when xspct_db_metrics_enabled=true. "
+    except ImportError:
+        import logging
+
+        logging.getLogger(__name__).error(
+            "prometheus-client is not installed — metrics endpoint disabled. "
             "Install with: pip install 'xspct-db[metrics]'"
-        ) from exc
+        )
+        return
 
     from .handlers import metrics_handler
     from .loop_lag import start_loop_lag_task, stop_loop_lag_task
