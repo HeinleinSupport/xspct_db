@@ -114,3 +114,7 @@ python -m sphinx -b html docs docs/_build/html
 ## License
 
 European Union Public Licence v. 1.2 (EUPL-1.2) — see [LICENSES/EUPL-1.2.txt](LICENSES/EUPL-1.2.txt).
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
