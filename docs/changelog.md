@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.7.3 (2026-05-08)
+
+### Features
+- Prometheus metrics integration via `prometheus_client` (optional extra `[metrics]`):
+  - New package `xspct_db/metrics/` with `setup_metrics(app)` entry point
+  - HTTP middleware records `http_requests_total{method,route,status}`, `http_request_duration_seconds{method,route}`, and `http_requests_in_flight`
+  - Background task measures `event_loop_lag_seconds` with WARNING log above 100 ms threshold
+  - `/metrics` handler with per-app TTL cache (`xspct_db_metrics_cache_ttl`, default 5 s) and optional auth
+  - Custom `_StatsCollector` bridges existing `stats.stats` counters into the Prometheus registry on every scrape (zero-overhead when not enabled)
+  - `ProcessCollector` and `PlatformCollector` included by default (process CPU, memory, open FDs)
+  - Enabled via `xspct_db_metrics_enabled: true`; without the extra the service starts normally with metrics disabled
+- Old hand-rolled `/metrics` endpoint (`MetricsView`, `_prometheus_lines()`) removed; route is now registered by `setup_metrics()`
+- Periodic `log_stats_periodically` background task removed from startup/shutdown; Prometheus scrape replaces it
+
+### Fix
+- `_detect_response_format()`: skip msgpack MIME types in the `Accept` header when the `msgpack` library is not installed instead of returning `"msgpack"` unconditionally — prevents 406 responses from clients (e.g. rspamd) that advertise msgpack support but can fall back to JSON
+- `_log_response()`: now includes response headers in the DEBUG log line
+- `_rs_task()`: rspamd-settings response DEBUG log now includes HTTP status code and `Content-Type`
+
+### Configuration
+- New top-level config keys:
+  - `xspct_db_metrics_enabled: false` — enable the Prometheus `/metrics` endpoint
+  - `xspct_db_metrics_cache_ttl: 5` — TTL in seconds for the cached `generate_latest()` output
+
+### Project
+- New optional dependency extra: `metrics = ["prometheus-client>=0.19"]`
+- `all` extra extended with `prometheus-client>=0.19`
+- Startup WARNING when `msgpack` library is not installed
+- New test package `tests/metrics/` (middleware, loop-lag, handler, integration)
+
 ## 0.7.2 (2026-05-08)
 
 ### Features

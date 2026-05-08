@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "xspct_db"
-version = "0.7.2"
+version = "0.7.3"
 description = "Multi-backend database query service with Redis caching and Rspamd integration"
 readme = "README.md"
 license = { text = "EUPL-1.2" }
@@ -54,12 +54,16 @@ msgpack = [
 uvloop = [
   "uvloop>=0.19",
 ]
+metrics = [
+  "prometheus-client>=0.19",
+]
 all = [
   "bonsai>=1.5",
   "aiomysql>=0.2",
   "redis>=5.0",
   "msgpack>=1.0",
   "uvloop>=0.19",
+  "prometheus-client>=0.19",
 ]
 dev = [
   "pytest>=8.0",

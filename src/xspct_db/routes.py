@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 from typing import Any
 from urllib.parse import unquote
 
@@ -18,7 +17,7 @@ from aiohttp_pydantic.oas.typing import r200, r401, r500, r504
 from pydantic import ValidationError
 
 from xspct_db import cache, prefilter, stats
-from xspct_db.auth import verify_api_key, verify_metrics_auth
+from xspct_db.auth import verify_api_key
 from xspct_db.schemas import (
     ErrorResponse,
     QueryJsonRequest,
@@ -516,41 +515,6 @@ class PingView(PydanticView):
 
 
 # ---------------------------------------------------------------------------
-# Metrics
-# ---------------------------------------------------------------------------
-
-
-class MetricsView(PydanticView):
-    async def get(self) -> r200[str] | r401[ErrorResponse]:
-        """
-        Prometheus metrics.
-
-        Returns Prometheus text format (``text/plain; version=0.0.4``).
-        Authentication is optional, controlled by ``xspct_db_metrics_auth``.
-        """
-        cfg: dict[str, Any] = self.request.app["config"]
-        s = f"<metrics-{generate_session_id()}>"
-
-        if not verify_metrics_auth(s, self.request, cfg):
-            return web.Response(
-                status=401,
-                text="401 Unauthorized",
-                headers={"WWW-Authenticate": 'Basic realm="xspct-db metrics", charset="UTF-8"'},
-            )
-
-        global _prometheus_cache, _prometheus_cache_time
-        now = time.monotonic()
-        if _prometheus_cache is None or now - _prometheus_cache_time > _PROMETHEUS_CACHE_TTL:
-            _prometheus_cache = _prometheus_lines(stats.stats)
-            _prometheus_cache_time = now
-
-        return web.Response(
-            text=_prometheus_cache,
-            headers={"Content-Type": "text/plain; version=0.0.4; charset=utf-8"},
-        )
-
-
-# ---------------------------------------------------------------------------
 # Query endpoints
 # ---------------------------------------------------------------------------
 
@@ -1024,8 +988,14 @@ class RspamdSettingsView(PydanticView):
                 settings_error=[],
             )
             reply_dict = reply.model_dump(exclude_none=True)
-            logger.debug("%s rspamd-settings response: %s", s, reply_dict)
             body, ctype = _serialize_body(reply_dict, fmt)
+            logger.debug(
+                "%s rspamd-settings response: status=200  content-type=%s"
+                "  headers={'Connection': 'Keep-Alive'}  body=%s",
+                s,
+                ctype,
+                reply_dict,
+            )
             cache.set_response(response_cache_key, (body, ctype), cfg)
             return body, ctype
 
@@ -1065,8 +1035,6 @@ def setup_routes(app: web.Application) -> None:
         ("/", HealthView),
         ("/ping", PingView),
         ("/ping/", PingView),
-        ("/metrics", MetricsView),
-        ("/metrics/", MetricsView),
         ("/v1/query/{user}", QueryView),
         ("/v1/query/{user}/", QueryView),
         ("/query/v1/{user}", QueryView),

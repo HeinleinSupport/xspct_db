@@ -39,6 +39,8 @@ DEFAULTS: dict[str, Any] = {
     "xspct_db_stats_enabled": True,
     "xspct_db_stats_interval": 60,
     "xspct_db_stats_sample_interval": 10,
+    "xspct_db_metrics_enabled": False,
+    "xspct_db_metrics_cache_ttl": 5,
     "xspct_db_metrics_auth": {
         "enabled": False,
         "api_key": True,

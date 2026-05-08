@@ -14,8 +14,9 @@ from typing import Any
 from aiohttp import web
 from aiohttp_pydantic import oas
 
-from xspct_db import __version__, cache, stats
+from xspct_db import __version__, cache
 from xspct_db import config as cfg_mod
+from xspct_db.metrics import setup_metrics
 from xspct_db.routes import setup_routes
 
 try:
@@ -58,8 +59,6 @@ async def _on_startup(app: web.Application) -> None:
 
         await create_mysql_pools(cfg)
 
-    app["_stats_task"] = asyncio.create_task(stats.log_stats_periodically(cfg))
-
     from xspct_db import prefilter
 
     await prefilter.start(app, cfg)
@@ -76,12 +75,6 @@ async def _on_shutdown(app: web.Application) -> None:
     from xspct_db import prefilter
 
     await prefilter.stop(app)
-
-    # Stop the periodic stats task.
-    stats_task: asyncio.Task | None = app.get("_stats_task")
-    if stats_task is not None:
-        stats_task.cancel()
-        await asyncio.gather(stats_task, return_exceptions=True)
 
     # Cancel outstanding background query tasks.
     bg_tasks: set[asyncio.Task] = app.get("bg_tasks", set())
@@ -112,6 +105,7 @@ def create_app(config: dict[str, Any]) -> web.Application:
         title_spec="xspct_db",
         version_spec=__version__,
     )
+    setup_metrics(app)
     app.on_startup.append(_on_startup)
     app.on_shutdown.append(_on_shutdown)
     return app

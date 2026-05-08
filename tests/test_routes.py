@@ -9,6 +9,8 @@ import json
 
 import pytest
 
+from xspct_db.server import create_app
+
 # ---------------------------------------------------------------------------
 # Health / utility
 # ---------------------------------------------------------------------------
@@ -27,8 +29,11 @@ async def test_ping_endpoint(app_client):
     assert await resp.text() == "Pong"
 
 
-async def test_metrics_unauthenticated(app_client):
-    resp = await app_client.get("/metrics")
+async def test_metrics_unauthenticated(base_cfg, aiohttp_client):
+    base_cfg["xspct_db_metrics_enabled"] = True
+    app = create_app(base_cfg)
+    client = await aiohttp_client(app)
+    resp = await client.get("/metrics")
     assert resp.status == 200
     text = await resp.text()
     assert "xspct_db_requests_total" in text
@@ -270,12 +275,16 @@ async def test_foreground_overload_returns_503(delay_app_client):
     assert xstats.stats["foreground_overloaded"] >= 1
 
 
-async def test_prometheus_includes_queue_metrics(app_client):
+async def test_prometheus_includes_queue_metrics(base_cfg, aiohttp_client):
     """GET /metrics includes the five queue-related counter lines."""
     from xspct_db import stats as xstats
 
+    base_cfg["xspct_db_metrics_enabled"] = True
+    app = create_app(base_cfg)
+    client = await aiohttp_client(app)
+
     xstats.reset()
-    resp = await app_client.get("/metrics")
+    resp = await client.get("/metrics")
     body = await resp.text()
     for metric in (
         "xspct_db_foreground_overloaded_total",

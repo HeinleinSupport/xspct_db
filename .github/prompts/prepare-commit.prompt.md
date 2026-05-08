@@ -38,13 +38,17 @@ If reuse is not installed, scan manually for missing headers. Stop on violations
 ```
 If any tests fail, **stop** and show the full failure output. Do not proceed.
 
-### 5. Stage formatted / fixed files
+### 5. update changelog
+
+update `docs/changelog.md` with a new entry for the upcoming release, following the existing format. Include all relevant changes since the last release, categorized by type (Features, Fixes, Performance, etc.). Use bullet points for each change and ensure that the formatting is consistent with previous entries.
+
+### 6. Stage formatted / fixed files
 ```bash
 git add -u
 ```
 List the files staged.
 
-### 6. Suggest a commit message
+### 7. Suggest a commit message
 
 Ask the user (or infer from the changes) what was done, then suggest a commit message using the
 **`[Tag] Description`** format:
@@ -62,7 +66,7 @@ Ask the user (or infer from the changes) what was done, then suggest a commit me
 
 Example: `[Feature] Add foreground/background query queue with 503/504 responses`
 
-### 7. GPG signing reminder
+### 8. GPG signing reminder
 
 **ALL commits must be GPG-signed:**
 ```bash

@@ -31,7 +31,9 @@ path = [
     ".pytest_cache/**",
     "src/xspct_db.egg-info/**",
     "src/xspct_db/__pycache__/**",
+    "src/xspct_db/metrics/__pycache__/**",
     "tests/__pycache__/**",
+    "tests/metrics/__pycache__/**",
     "docs/_build/**",
 ]
 precedence = "override"
