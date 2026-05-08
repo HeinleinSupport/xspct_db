@@ -1077,7 +1077,11 @@ class RspamdSettingsView(PydanticView):
                     for addr in addresses
                 ]
                 userdata, user_to_pkey, _ = await run_queries(s, "", False, users, userdata, user_to_pkey, cfg)
-            computed = _compute_rcpt_settings(userdata, rspamd_req.rcpts, cfg)
+            # Resolve rcpt query addresses to the primary keys used in userdata["users"].
+            # This handles cases where the backend primary_key differs from the query address
+            # (e.g. LDAP primary_key: uid, or a normalised mail attribute value).
+            rcpt_primary_keys = [user_to_pkey.get(r, r) for r in rspamd_req.rcpts]
+            computed = _compute_rcpt_settings(userdata, rcpt_primary_keys, cfg)
             fired_rules: list[str] = computed.pop("fired_rules", [])
             sd = _build_settings_data(userdata, cfg)
             if sd:
