@@ -782,7 +782,7 @@ class QueryJsonView(PydanticView):
 
         # --- Response cache lookup ---
         response_cache_key = ("query-json", tuple(sorted(filtered_users)), fmt)
-        cached = cache.get_response(response_cache_key, cfg)
+        cached = cache.get_response(response_cache_key, cfg, s)
         if cached is not None:
             stats.stats["response_cache_hits"] += 1
             cached_body, cached_ctype = cached
@@ -938,7 +938,7 @@ class RspamdSettingsView(PydanticView):
 
         # --- Response cache lookup ---
         response_cache_key = _rspamd_cache_key(rspamd_req, cfg) + (fmt,)
-        cached = cache.get_response(response_cache_key, cfg)
+        cached = cache.get_response(response_cache_key, cfg, s)
         if cached is not None:
             stats.stats["response_cache_hits"] += 1
             cached_body, cached_ctype = cached
@@ -989,13 +989,6 @@ class RspamdSettingsView(PydanticView):
             )
             reply_dict = reply.model_dump(exclude_none=True)
             body, ctype = _serialize_body(reply_dict, fmt)
-            logger.debug(
-                "%s rspamd-settings response: status=200  content-type=%s"
-                "  headers={'Connection': 'Keep-Alive'}  body=%s",
-                s,
-                ctype,
-                reply_dict,
-            )
             cache.set_response(response_cache_key, (body, ctype), cfg)
             return body, ctype
 

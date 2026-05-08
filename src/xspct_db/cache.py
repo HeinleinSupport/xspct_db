@@ -111,11 +111,21 @@ def _ensure_response_cache(cfg: dict[str, Any]) -> bool:
     return True
 
 
-def get_response(key: tuple, cfg: dict[str, Any]) -> bytes | None:
+def get_response(key: tuple, cfg: dict[str, Any], s: str = "") -> bytes | None:
     """Return cached response bytes for *key*, or ``None`` on miss/disabled."""
     if not _ensure_response_cache(cfg):
         return None
-    return _response_cache.get(key)  # type: ignore[union-attr]
+    result = _response_cache.get(key)  # type: ignore[union-attr]
+    if result is not None and logger.isEnabledFor(logging.DEBUG):
+        try:
+            ttl_remaining = _response_cache._TTLCache__links[key].expires - _response_cache.timer()  # type: ignore[attr-defined]
+        except Exception:
+            ttl_remaining = -1
+        logger.debug(
+            "%s - response cache hit  key=%s  ttl_remaining=%.1fs",
+            s, key[0] if key else "?", ttl_remaining,
+        )
+    return result
 
 
 def set_response(key: tuple, body: bytes, cfg: dict[str, Any]) -> None:
@@ -204,9 +214,27 @@ async def get_object_with_source(s: str, user: str, cfg: dict[str, Any]) -> tupl
         if canonical is not None:
             user_obj = _local_users.get(canonical)  # type: ignore[union-attr]
             if user_obj is not None:
+                if logger.isEnabledFor(logging.DEBUG):
+                    try:
+                        ttl_remaining = _local_users._TTLCache__links[canonical].expires - _local_users.timer()  # type: ignore[attr-defined]
+                    except Exception:
+                        ttl_remaining = -1
+                    logger.debug(
+                        "%s - L1 cache hit (positive) for %s → canonical=%s  ttl_remaining=%.1fs",
+                        s, user, canonical, ttl_remaining,
+                    )
                 return user_obj, "local"
 
         if user in _local_negative:  # type: ignore[operator]
+            if logger.isEnabledFor(logging.DEBUG):
+                try:
+                    ttl_remaining = _local_negative._TTLCache__links[user].expires - _local_negative.timer()  # type: ignore[attr-defined]
+                except Exception:
+                    ttl_remaining = -1
+                logger.debug(
+                    "%s - L1 cache hit (negative) for %s  ttl_remaining=%.1fs",
+                    s, user, ttl_remaining,
+                )
             return False, "local"
 
     # --- L2 (Redis) lookup ---
@@ -239,6 +267,15 @@ async def get_object_with_source(s: str, user: str, cfg: dict[str, Any]) -> tupl
             if _ensure_l1(cfg):
                 _local_aliases[user] = alias  # type: ignore[index]
                 _local_users[alias] = user_obj  # type: ignore[index]
+            if logger.isEnabledFor(logging.DEBUG):
+                try:
+                    ttl_remaining = await connection.ttl(key_obj)
+                except Exception:
+                    ttl_remaining = -1
+                logger.debug(
+                    "%s - L2 Redis cache hit (positive) for %s → alias=%s  ttl_remaining=%ds",
+                    s, user, alias, ttl_remaining,
+                )
             return user_obj, "redis"
     else:
         key_neg = redis_cfg["prefix_negative_alias"] + user
@@ -252,6 +289,15 @@ async def get_object_with_source(s: str, user: str, cfg: dict[str, Any]) -> tupl
             # Backfill L1 negative.
             if _ensure_l1(cfg):
                 _local_negative[user] = True  # type: ignore[index]
+            if logger.isEnabledFor(logging.DEBUG):
+                try:
+                    ttl_remaining = await connection.ttl(key_neg)
+                except Exception:
+                    ttl_remaining = -1
+                logger.debug(
+                    "%s - L2 Redis cache hit (negative) for %s  ttl_remaining=%ds",
+                    s, user, ttl_remaining,
+                )
             return False, "redis-negative"
 
     return None, "miss"
