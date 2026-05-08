@@ -109,7 +109,6 @@ def merge_userdata(
         userdata["users"][user] = data
     else:
         _merge_mapping_in_place(userdata["users"][user], data)
-    logger.debug("%s - userdata updated for %s", s, user)
     return userdata
 
 

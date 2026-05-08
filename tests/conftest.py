@@ -76,6 +76,9 @@ def base_cfg() -> dict[str, Any]:
         },
         "xspct_db_yaml_data": {},
         "xspct_db_rspamd_alias_fields": ["aliases"],
+        "xspct_db_reject_level_map": {"5": 13, "6": 15, "6.31": 17},
+        "xspct_db_reject_level_default": 15,
+        "xspct_db_rspamd_rules": None,
         "xspct_db_local_cache": {
             "enabled": False,
             "expire": 20,
@@ -109,6 +112,32 @@ def yaml_cfg(base_cfg: dict[str, Any]) -> dict[str, Any]:
                 "mail": "alice@mailexample.de",
                 "uid": "alice",
                 "aliases": ["a@mailexample.de"],
+            },
+            # bob: all feature attributes explicitly disabled; reject_level 5 → Rspamd 13
+            "bob@mailexample.de": {
+                "mail": "bob@mailexample.de",
+                "uid": "bob",
+                "aliases": [],
+                "greylisting": "FALSE",
+                "rbl": "FALSE",
+                "mx_checks": "FALSE",
+                "banned_bypass": "TRUE",
+                "reject_level": "5",
+            },
+            # carol: no boolean attributes → tests "absent = default (enabled)" behaviour
+            "carol@mailexample.de": {
+                "mail": "carol@mailexample.de",
+                "uid": "carol",
+                "aliases": [],
+            },
+            # dave: greylisting and rbl disabled, reject_level=6 → Rspamd 15
+            "dave@mailexample.de": {
+                "mail": "dave@mailexample.de",
+                "uid": "dave",
+                "aliases": [],
+                "greylisting": "FALSE",
+                "rbl": "FALSE",
+                "reject_level": "6",
             },
         }
     }

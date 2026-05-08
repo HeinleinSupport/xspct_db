@@ -5,7 +5,7 @@
 xspct_db – Multi-backend database query service with Redis caching and Rspamd integration.
 """
 
-__version__ = "0.7.1"
+__version__ = "0.7.2"
 __author__ = "Carsten Rosenberg"
 __email__ = "c.rosenberg@heinlein-support.de"
 __license__ = "EUPL-1.2"

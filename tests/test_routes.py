@@ -381,3 +381,197 @@ async def test_query_json_msgpack_and_json_cache_separate(response_cache_app_cli
     assert resp_mp.status == 200
     # Only the very first request triggered a miss; the second also misses (different fmt key)
     assert xstats.stats["response_cache_hits"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Rspamd settings rules-engine tests (YAML backend + bob/carol/dave fixtures)
+# ---------------------------------------------------------------------------
+
+
+async def test_rspamd_settings_no_rcpts_empty_actions(yaml_app_client):
+    """POST {} → no rcpts → no reject action set, no disabled lists."""
+    resp = await yaml_app_client.post(
+        "/v1/rspamd-settings",
+        data=json.dumps({}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert "reject" not in data.get("actions", {})
+    assert data.get("symbols_disabled", []) == []
+    assert data.get("groups_disabled", []) == []
+
+
+async def test_rspamd_settings_single_rcpt_defaults_enabled(yaml_app_client):
+    """carol has no attrs → defaults apply → greylisting NOT disabled."""
+    resp = await yaml_app_client.post(
+        "/v1/rspamd-settings",
+        data=json.dumps({"rcpts": ["carol@mailexample.de"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    sd = data.get("symbols_disabled", [])
+    assert "GREYLIST_CHECK" not in sd
+    assert "GREYLIST_SAVE" not in sd
+    assert "GREYLIST" not in sd
+    assert "greylist" not in data.get("actions", {})
+
+
+async def test_rspamd_settings_greylisting_disabled_for_single_rcpt(yaml_app_client):
+    """bob has greylisting=FALSE → GREYLIST symbols disabled and actions[greylist]='null'."""
+    resp = await yaml_app_client.post(
+        "/v1/rspamd-settings",
+        data=json.dumps({"rcpts": ["bob@mailexample.de"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    sd = data.get("symbols_disabled", [])
+    assert "GREYLIST_CHECK" in sd
+    assert "GREYLIST_SAVE" in sd
+    assert "GREYLIST" in sd
+    assert data["actions"].get("greylist") == "null"
+
+
+async def test_rspamd_settings_greylisting_mixed_rcpts_not_disabled(yaml_app_client):
+    """alice (no attr → default True) + bob (FALSE) → aggregation:all fails → NOT disabled."""
+    resp = await yaml_app_client.post(
+        "/v1/rspamd-settings",
+        data=json.dumps({"rcpts": ["alice@mailexample.de", "bob@mailexample.de"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    sd = data.get("symbols_disabled", [])
+    assert "GREYLIST_CHECK" not in sd
+    assert "greylist" not in data.get("actions", {})
+
+
+async def test_rspamd_settings_greylisting_all_disabled(yaml_app_client):
+    """bob + dave both have greylisting=FALSE → aggregation:all passes → disabled."""
+    resp = await yaml_app_client.post(
+        "/v1/rspamd-settings",
+        data=json.dumps({"rcpts": ["bob@mailexample.de", "dave@mailexample.de"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    sd = data.get("symbols_disabled", [])
+    assert "GREYLIST_CHECK" in sd
+    assert data["actions"].get("greylist") == "null"
+
+
+async def test_rspamd_settings_reject_level_translation(yaml_app_client):
+    """bob has reject_level='5' → translated to Rspamd reject 13."""
+    resp = await yaml_app_client.post(
+        "/v1/rspamd-settings",
+        data=json.dumps({"rcpts": ["bob@mailexample.de"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert data["actions"]["reject"] == 13
+
+
+async def test_rspamd_settings_reject_level_most_restrictive(yaml_app_client):
+    """bob (reject_level=5 → 13) + dave (reject_level=6 → 15): min wins → 13."""
+    resp = await yaml_app_client.post(
+        "/v1/rspamd-settings",
+        data=json.dumps({"rcpts": ["bob@mailexample.de", "dave@mailexample.de"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert data["actions"]["reject"] == 13
+
+
+async def test_rspamd_settings_reject_level_equals_default_omitted(yaml_app_client):
+    """dave has reject_level=6 → 15 which equals the default → actions["reject"] omitted."""
+    resp = await yaml_app_client.post(
+        "/v1/rspamd-settings",
+        data=json.dumps({"rcpts": ["dave@mailexample.de"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert "reject" not in data.get("actions", {})
+
+
+async def test_rspamd_settings_reject_level_partial_mapping_omitted(yaml_app_client):
+    """bob (mapped) + carol (no reject_level) → not all mapped → actions["reject"] omitted."""
+    resp = await yaml_app_client.post(
+        "/v1/rspamd-settings",
+        data=json.dumps({"rcpts": ["bob@mailexample.de", "carol@mailexample.de"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert "reject" not in data.get("actions", {})
+
+
+async def test_rspamd_settings_rbl_disabled_for_bob(yaml_cfg, aiohttp_client):
+    """bob has rbl=FALSE → with an explicit rule, groups_disabled includes 'rbl'."""
+    from xspct_db import stats as xstats
+    from xspct_db.server import create_app
+
+    custom_cfg = dict(yaml_cfg)
+    custom_cfg["xspct_db_rspamd_rules"] = [
+        {
+            "name": "disable_rbl",
+            "condition": {"attribute": "rbl", "operator": "falsy", "default": True},
+            "aggregation": "all",
+            "apply": {"groups_disabled": ["rbl"]},
+        }
+    ]
+    xstats.reset()
+    app = create_app(custom_cfg)
+    client = await aiohttp_client(app)
+
+    resp = await client.post(
+        "/v1/rspamd-settings",
+        data=json.dumps({"rcpts": ["bob@mailexample.de"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert "rbl" in data.get("groups_disabled", [])
+
+
+async def test_rspamd_settings_custom_rule_via_config(yaml_cfg, aiohttp_client):
+    """A custom rule injected via xspct_db_rspamd_rules is evaluated correctly."""
+    from xspct_db import stats as xstats
+    from xspct_db.server import create_app
+
+    custom_cfg = dict(yaml_cfg)
+    custom_cfg["xspct_db_rspamd_rules"] = [
+        {
+            "name": "test_custom_rule",
+            "condition": {"attribute": "banned_bypass", "operator": "truthy", "default": False},
+            "aggregation": "all",
+            "apply": {"symbols_disabled": ["MY_CUSTOM_SYMBOL"]},
+        }
+    ]
+    xstats.reset()
+    app = create_app(custom_cfg)
+    client = await aiohttp_client(app)
+
+    # bob has banned_bypass=TRUE → custom rule fires
+    resp = await client.post(
+        "/v1/rspamd-settings",
+        data=json.dumps({"rcpts": ["bob@mailexample.de"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert "MY_CUSTOM_SYMBOL" in data.get("symbols_disabled", [])
+
+    # carol has no banned_bypass attr → default False → rule should NOT fire
+    resp2 = await client.post(
+        "/v1/rspamd-settings",
+        data=json.dumps({"rcpts": ["carol@mailexample.de"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp2.status == 200
+    data2 = json.loads(await resp2.text())
+    assert "MY_CUSTOM_SYMBOL" not in data2.get("symbols_disabled", [])

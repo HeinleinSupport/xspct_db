@@ -350,6 +350,202 @@ async def _run_with_queues(
         fg_sem.release()
 
 
+# ---------------------------------------------------------------------------
+# Rspamd settings computation
+# ---------------------------------------------------------------------------
+
+# Default rules that translate user-data attributes into Rspamd settings.
+# Each rule has:
+#   name        – human-readable identifier (used in log messages)
+#   condition   – which user attribute to inspect and how:
+#                   attribute  str   user-data key
+#                   operator   str   truthy | falsy | eq | ne | present | absent
+#                   value      Any   comparison value for eq / ne
+#                   default    Any   assumed value when the attribute is absent
+#   aggregation str  "all"  → rule fires only when ALL rcpts match the condition
+#                    "any"  → rule fires when ANY rcpt matches
+#   apply       dict  keys that are merged into the final settings response:
+#                   actions         dict[str, float|str]
+#                   symbols_disabled list[str]
+#                   symbols_enabled  list[str]
+#                   groups_disabled  list[str]
+#                   groups_enabled   list[str]
+#                   symbols         dict[str, float]   (name→score, future)
+#                   subject         str                (future)
+#
+# Override with xspct_db_rspamd_rules in config to replace these entirely.
+_DEFAULT_RSPAMD_RULES: list[dict[str, Any]] = [
+    {
+        "name": "disable_greylisting",
+        "condition": {"attribute": "greylisting", "operator": "falsy", "default": True},
+        "aggregation": "all",
+        "apply": {
+            "symbols_disabled": ["GREYLIST_CHECK", "GREYLIST_SAVE", "GREYLIST"],
+            "actions": {"greylist": "null"},
+        },
+    },
+]
+
+
+def _eval_attr_condition(value: Any, operator: str, cmp_value: Any = None) -> bool:
+    """Evaluate *operator* against a single attribute *value*.
+
+    Handles LDAP-style strings (``"TRUE"`` / ``"FALSE"``), Python bools,
+    single-element lists (as returned by LDAP / YAML backends), and
+    ``None`` (absent).  Callers should substitute the rule ``default`` before
+    calling when the attribute is missing from the user dict.
+    """
+    # Unwrap single-element lists produced by the LDAP/YAML backends.
+    scalar: Any = value
+    if isinstance(value, list):
+        if len(value) == 0:
+            scalar = None  # empty list → treat as absent
+        else:
+            scalar = value[0]
+
+    # Normalise LDAP strings and ints to Python bool for truthy/falsy checks.
+    normalised: Any = scalar
+    if isinstance(scalar, str):
+        upper = scalar.upper()
+        if upper == "TRUE":
+            normalised = True
+        elif upper == "FALSE":
+            normalised = False
+
+    if operator == "truthy":
+        return bool(normalised)
+    if operator == "falsy":
+        return not bool(normalised)
+    if operator == "present":
+        return scalar is not None
+    if operator == "absent":
+        return scalar is None
+    if operator == "eq":
+        return normalised == cmp_value
+    if operator == "ne":
+        return normalised != cmp_value
+    return False
+
+
+def _compute_rcpt_settings(
+    userdata: dict[str, Any],
+    rcpts: list[str],
+    cfg: dict[str, Any],
+) -> dict[str, Any]:
+    """Compute Rspamd actions / symbol lists from recipient user objects.
+
+    Returns a dict with the keys that should be merged into
+    :class:`~xspct_db.schemas.RspamdSettingsResponse`:
+    ``actions``, ``symbols_disabled``, ``symbols_enabled``,
+    ``groups_disabled``, ``groups_enabled``, ``symbols``, ``subject``.
+
+    ``symbols_enabled`` and ``groups_enabled`` are ``None`` when empty so
+    callers can use ``exclude_none=True`` cleanly.
+    """
+    users: dict[str, Any] = userdata.get("users", {})
+    rcpt_set = set(rcpts)
+    rcpt_users: list[dict[str, Any]] = [v for k, v in users.items() if k in rcpt_set and isinstance(v, dict)]
+
+    # Accumulated result
+    actions: dict[str, Any] = {}
+    symbols_disabled: list[str] = []
+    symbols_enabled: list[str] = []
+    groups_disabled: list[str] = []
+    groups_enabled: list[str] = []
+    symbols_scored: dict[str, float] = {}
+    subject: str | None = None
+    fired_rules: list[str] = []
+
+    # --- Rules engine ---
+    rules: list[dict[str, Any]] = cfg.get("xspct_db_rspamd_rules") or _DEFAULT_RSPAMD_RULES
+    for rule in rules:
+        cond = rule.get("condition", {})
+        attr = cond.get("attribute", "")
+        operator = cond.get("operator", "truthy")
+        cmp_value = cond.get("value")
+        default = cond.get("default")
+        aggregation = rule.get("aggregation", "all")
+        apply = rule.get("apply", {})
+
+        if not rcpt_users:
+            # No known recipients — skip rules; fail-safe handled below.
+            continue
+
+        if len(rcpt_users) == 1:
+            # Fast path: skip list allocation and all()/any() for the common single-rcpt case.
+            raw = rcpt_users[0].get(attr)
+            fires = _eval_attr_condition(raw if raw is not None else default, operator, cmp_value)
+        else:
+            per_rcpt_results = [
+                _eval_attr_condition((udata.get(attr) if udata.get(attr) is not None else default), operator, cmp_value)
+                for udata in rcpt_users
+            ]
+            fires = all(per_rcpt_results) if aggregation == "all" else any(per_rcpt_results)
+        if not fires:
+            continue
+
+        fired_rules.append(rule.get("name", ""))
+
+        # Merge apply block into accumulator.
+        for sym in apply.get("symbols_disabled", []):
+            if sym not in symbols_disabled:
+                symbols_disabled.append(sym)
+        for sym in apply.get("symbols_enabled", []):
+            if sym not in symbols_enabled:
+                symbols_enabled.append(sym)
+        for grp in apply.get("groups_disabled", []):
+            if grp not in groups_disabled:
+                groups_disabled.append(grp)
+        for grp in apply.get("groups_enabled", []):
+            if grp not in groups_enabled:
+                groups_enabled.append(grp)
+        for k, v in apply.get("actions", {}).items():
+            actions[k] = v
+        for sym, score in apply.get("symbols", {}).items():
+            symbols_scored[sym] = score
+        if apply.get("subject") and subject is None:
+            subject = apply["subject"]
+
+    # --- Reject level ---
+    # actions["reject"] is set only when ALL rcpts have a reject_level present in the
+    # translation map AND the computed minimum differs from the configured default.
+    # If any rcpt has no mapped level (missing or unmapped), the action is omitted so
+    # Rspamd keeps its own default threshold.
+    reject_level_map: dict[str, int] = cfg.get("xspct_db_reject_level_map", {"5": 13, "6": 15, "6.31": 17})
+    reject_level_default: int = int(cfg.get("xspct_db_reject_level_default", 15))
+
+    translated_values: list[int] = []
+    all_mapped = bool(rcpt_users)  # False when there are no rcpts
+    for udata in rcpt_users:
+        raw_level = udata.get("reject_level")
+        if isinstance(raw_level, list):
+            raw_level = raw_level[0] if raw_level else None
+        if raw_level is not None and str(raw_level) != "":
+            translated = reject_level_map.get(str(raw_level))
+            if translated is not None:
+                translated_values.append(translated)
+                continue
+        # Rcpt has no level or unmapped value — abort: leave reject unset.
+        all_mapped = False
+        break
+
+    if all_mapped and translated_values:
+        computed = min(translated_values)
+        if computed != reject_level_default:
+            actions["reject"] = computed
+
+    return {
+        "actions": actions,
+        "symbols_disabled": symbols_disabled,
+        "symbols_enabled": symbols_enabled or None,
+        "groups_disabled": groups_disabled,
+        "groups_enabled": groups_enabled or None,
+        "symbols": symbols_scored if symbols_scored else [],
+        "subject": subject,
+        "fired_rules": fired_rules,
+    }
+
+
 def _rspamd_cache_key(rspamd_req: Any, cfg: dict[str, Any]) -> tuple:
     """Build a cache key tuple for a Rspamd-settings request.
 
@@ -881,14 +1077,19 @@ class RspamdSettingsView(PydanticView):
                     for addr in addresses
                 ]
                 userdata, user_to_pkey, _ = await run_queries(s, "", False, users, userdata, user_to_pkey, cfg)
+            computed = _compute_rcpt_settings(userdata, rspamd_req.rcpts, cfg)
+            fired_rules: list[str] = computed.pop("fired_rules", [])
+            sd = _build_settings_data(userdata, cfg)
+            if sd:
+                sd["profile"] = {"applied_rules": fired_rules}
             reply = RspamdSettingsResponse(
-                actions={"reject": 15, "greylist": 8, "add header": 13},
-                symbols_disabled=["DKIM_SIGNED"],
-                symbols=["SETTINGS_API_TEST_RESPONSE"],
-                settings_data=_build_settings_data(userdata, cfg),
+                **computed,
+                settings_data=sd,
                 settings_error=[],
             )
-            body, ctype = _serialize_body(reply.model_dump(exclude_none=True), fmt)
+            reply_dict = reply.model_dump(exclude_none=True)
+            logger.debug("%s rspamd-settings response: %s", s, reply_dict)
+            body, ctype = _serialize_body(reply_dict, fmt)
             cache.set_response(response_cache_key, (body, ctype), cfg)
             return body, ctype
 

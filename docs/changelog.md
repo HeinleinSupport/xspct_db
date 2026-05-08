@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.7.2 (2026-05-08)
+
+### Features
+- Dynamic Rspamd settings rules engine in `POST /v1/rspamd-settings`:
+  - Data-driven rule evaluation replaces hardcoded static settings
+  - Per-recipient attribute conditions (`truthy`, `falsy`, `eq`, `ne`, `present`, `absent`) with per-rule aggregation (`all` = AND, `any` = OR)
+  - Built-in default rule: `disable_greylisting` — disables greylisting symbols and sets `actions.greylist: null` when all recipients have `greylisting=FALSE`
+  - Override default rules entirely via `xspct_db_rspamd_rules` in config (YAML list of rule dicts)
+  - Single-recipient fast path: skips list allocation and `all()`/`any()` aggregation
+  - Handles LDAP string booleans (`"TRUE"` / `"FALSE"`) and single-element lists returned by all backends
+  - SA → Rspamd reject-score translation via `xspct_db_reject_level_map`; `actions.reject` is only set when **all** recipients have a mapped `reject_level` and the result differs from `xspct_db_reject_level_default`
+- `settings_data` extended with a `profile` section when at least one user was found:
+  - `settings_data.profile.applied_rules` — list of rule names that fired for this request
+- `RspamdSettingsResponse` schema extended:
+  - `subject: str | None` — Rspamd subject rewrite field
+  - `symbols: list[str] | dict[str, float]` — supports scored symbol map alongside plain list
+  - `actions: dict[str, float | str]` — widened to allow `"null"` string value for greylist passthrough
+
+### Configuration
+- New top-level config keys (with defaults):
+  - `xspct_db_reject_level_map: {"5": 13, "6": 15, "6.31": 17}`
+  - `xspct_db_reject_level_default: 15`
+  - `xspct_db_rspamd_rules: null` (use built-in default when null)
+
+### Project
+- Dependency SBOM (`bom.json`) generated via `cyclonedx-bom` (CycloneDX JSON) and committed alongside each release
+- New hatch scripts: `hatch run sbom-deps` / `hatch run sbom`
+- New dev dependencies: `reuse>=4.0`, `cyclonedx-bom>=5.0`
+- `/generate-sbom` VS Code Copilot slash command added
+
+### Debug
+- Removed noisy per-merge `DEBUG merge_userdata` log line from `backends/base.py`
+- Added `DEBUG` log of the computed Rspamd settings response before serialisation in `_rs_task()`
+
+
 ## 0.7.1 (2026-05-07)
 
 ### Features

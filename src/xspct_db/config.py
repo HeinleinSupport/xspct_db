@@ -75,6 +75,20 @@ DEFAULTS: dict[str, Any] = {
     },
     "xspct_db_yaml_data": {},
     "xspct_db_rspamd_alias_fields": ["aliases"],
+    # Rspamd settings computation
+    # SpamAssassin score → Rspamd reject score translation table.
+    # Keys are SA score strings; values are integer Rspamd scores.
+    # actions["reject"] is only set when ALL rcpts have a mapped reject_level AND
+    # the computed minimum differs from xspct_db_reject_level_default.
+    # Rcpts without reject_level (or with an unmapped value) suppress the action entirely.
+    "xspct_db_reject_level_map": {"5": 13, "6": 15, "6.31": 17},
+    # Default (fallback) Rspamd reject score used as reference value.
+    # actions["reject"] is omitted when the computed minimum equals this value.
+    "xspct_db_reject_level_default": 15,
+    # Rules that control which Rspamd symbols/groups are disabled/enabled based
+    # on user attributes.  Override to replace the built-in defaults entirely.
+    # See routes._DEFAULT_RSPAMD_RULES for the schema.
+    "xspct_db_rspamd_rules": None,
     "xspct_db_local_cache": {
         "enabled": True,
         "expire": 20,
