@@ -466,10 +466,11 @@ def _compute_rcpt_settings(
         break
 
     if all_mapped and translated_values:
-        computed = min(translated_values)
-        if computed != reject_level_default:
-            actions["reject"] = computed
-            fired_rules.append(f"reject({computed})")
+        if len(set(translated_values)) == 1:
+            computed = translated_values[0]
+            if computed != reject_level_default:
+                actions["reject"] = computed
+                fired_rules.append(f"reject({computed})")
 
     return {
         "actions": actions,
