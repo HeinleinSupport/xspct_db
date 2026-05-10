@@ -12,15 +12,15 @@ control, API-key authentication, Prometheus metrics, and TLS support.
 Requires Python 3.10 or newer.
 
 ```bash
-pip install xspct_db                   # core (aiohttp + PyYAML)
-pip install "xspct_db[ldap]"          # + bonsai LDAP support
-pip install "xspct_db[mysql]"         # + aiomysql support
-pip install "xspct_db[redis]"         # + Redis caching
-pip install "xspct_db[msgpack]"       # + msgpack body encoding
-pip install "xspct_db[uvloop]"        # + uvloop event loop
-pip install "xspct_db[all]"           # all optional backends
-pip install "xspct_db[all,dev]"       # + dev/test dependencies
-pip install "xspct_db[all,dev,docs]"  # + Sphinx documentation
+pip install "xspct_db @ git+https://github.com/HeinleinSupport/xspct_db.git"                   # core (aiohttp + PyYAML)
+pip install "xspct_db[ldap] @ git+https://github.com/HeinleinSupport/xspct_db.git"          # + bonsai LDAP support
+pip install "xspct_db[mysql] @ git+https://github.com/HeinleinSupport/xspct_db.git"         # + aiomysql support
+pip install "xspct_db[redis] @ git+https://github.com/HeinleinSupport/xspct_db.git"         # + Redis caching
+pip install "xspct_db[msgpack] @ git+https://github.com/HeinleinSupport/xspct_db.git"       # + msgpack body encoding
+pip install "xspct_db[uvloop] @ git+https://github.com/HeinleinSupport/xspct_db.git"        # + uvloop event loop
+pip install "xspct_db[all] @ git+https://github.com/HeinleinSupport/xspct_db.git"           # all optional backends
+pip install "xspct_db[all,dev] @ git+https://github.com/HeinleinSupport/xspct_db.git"       # + dev/test dependencies
+pip install "xspct_db[all,dev,docs] @ git+https://github.com/HeinleinSupport/xspct_db.git"  # + Sphinx documentation
 ```
 
 ## Usage
