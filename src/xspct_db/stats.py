@@ -31,6 +31,9 @@ stats: dict[str, Any] = {
     "background_completed": 0,
     "background_rejected": 0,
     "background_errors": 0,
+    # wildcard domain fallback counters
+    "wildcard_domain_hits": 0,
+    "wildcard_domain_misses": 0,
     # prefilter counters/gauge
     "prefilter_domain_count": 0,
     "prefilter_domain_hits": 0,
@@ -61,6 +64,8 @@ def reset() -> None:
     stats["background_completed"] = 0
     stats["background_rejected"] = 0
     stats["background_errors"] = 0
+    stats["wildcard_domain_hits"] = 0
+    stats["wildcard_domain_misses"] = 0
     stats["prefilter_domain_hits"] = 0
     stats["prefilter_domain_misses"] = 0
     stats["prefilter_pattern_hits"] = 0

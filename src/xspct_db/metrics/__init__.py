@@ -42,8 +42,7 @@ def setup_metrics(app: web.Application, registry: Any = None) -> None:
         import logging
 
         logging.getLogger(__name__).error(
-            "prometheus-client is not installed — metrics endpoint disabled. "
-            "Install with: pip install 'xspct-db[metrics]'"
+            "prometheus-client is not installed — metrics endpoint disabled. Install with: pip install 'xspct-db[metrics]'"
         )
         return
 

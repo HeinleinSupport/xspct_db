@@ -72,9 +72,7 @@ async def test_metrics_handler_returns_200(base_cfg: dict[str, Any], reg: Collec
         assert "text/plain" in ct
 
 
-async def test_metrics_handler_body_contains_process_metrics(
-    base_cfg: dict[str, Any], reg: CollectorRegistry
-):
+async def test_metrics_handler_body_contains_process_metrics(base_cfg: dict[str, Any], reg: CollectorRegistry):
     """Body includes process_resident_memory_bytes from ProcessCollector."""
     from prometheus_client import ProcessCollector
 

@@ -77,6 +77,18 @@ On a `GET /v1/query/{user}` request, lookups flow: L1 → L2 (Redis) → backend
 On a `POST` request, the response cache is checked first; on a miss the backend is queried
 and the serialised response is stored for reuse.
 
+## Wildcard Domain Query
+
+Any query can be configured with `wildcard_domain_query: true`.  When a user address is not
+found by the regular lookup, xspct_db re-runs that query using a *wildcard key* derived from
+the address (default: strip one subdomain level → `user@sub.example.com` → `@example.com`).
+The fallback result is returned under the original address in the response.
+
+The key derivation is configurable per query via `wildcard_key_pattern` and
+`wildcard_key_replacement` (Python `re.sub` syntax).  See
+[docs/guide/configuration.md](docs/guide/configuration.md#wildcard-domain-query) for the
+full reference and examples.
+
 ## Concurrency
 
 When `xspct_db_request_timeout` is greater than `0`, every query endpoint is guarded by two

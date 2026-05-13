@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.7.4 (2026-05-13)
+
+### Features
+- Wildcard domain query fallback: when a user address is not found by the regular backend
+  queries, a configurable wildcard key (e.g. `@example.com`) is looked up and the result is
+  returned under the original address — enabled per query with `wildcard_domain_query: true`
+- Wildcard key computation is driven by a `re.sub`-based pattern configurable per query:
+  - `wildcard_key_pattern` (default `.*@[^.]+\.(.+)`) — regex applied to the address
+  - `wildcard_key_replacement` (default `@\1`) — replacement string; omit for match-only mode
+  - Default behaviour strips one subdomain level: `user@sub.example.com` → `@example.com`
+- New stats counters `wildcard_domain_hits` and `wildcard_domain_misses` track fallback outcomes
+- Enhanced L1 / Redis cache debug logging: cache hit/miss details included in DEBUG-level log lines
+
+### Fixes
+- Reject level computation in `_compute_rcpt_settings`: use `min()` across all translated
+  recipient reject scores instead of requiring all values to be identical — ensures the most
+  restrictive score is applied when recipients have different reject levels
+- `reject_level` entry now included in `settings_data.profile.applied_rules` when a reject
+  score is set
+- Improved error handling for missing `prometheus-client`; response logging enhanced with
+  status code and `Content-Type` in DEBUG output
+
+### Documentation
+- New **Wildcard Domain Query** section in `docs/guide/configuration.md` with quick example,
+  key computation reference, stats counters, and full LDAP example
+- README: new Wildcard Domain Query paragraph with link to configuration reference
+- Installation instructions updated throughout to use GitHub source URL
+- Project layout and API endpoint descriptions updated in reference docs
+
 ## 0.7.3 (2026-05-08)
 
 ### Features

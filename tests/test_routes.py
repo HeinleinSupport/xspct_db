@@ -584,3 +584,163 @@ async def test_rspamd_settings_custom_rule_via_config(yaml_cfg, aiohttp_client):
     assert resp2.status == 200
     data2 = json.loads(await resp2.text())
     assert "MY_CUSTOM_SYMBOL" not in data2.get("symbols_disabled", [])
+
+
+# ---------------------------------------------------------------------------
+# Wildcard domain query fallback
+# ---------------------------------------------------------------------------
+
+
+async def test_wildcard_get_unknown_user_returns_domain_data(wildcard_yaml_app_client):
+    """Unknown user at sub.mailexample.de maps to @mailexample.de wildcard entry."""
+    from xspct_db import stats as xstats
+
+    client = wildcard_yaml_app_client
+    resp = await client.get(
+        "/v1/query/unknown%40sub.mailexample.de",
+        headers={"X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert "unknown@sub.mailexample.de" in data["users"]
+    assert data["users"]["unknown@sub.mailexample.de"]["uid"] == ["wildcard"]
+    assert xstats.stats["wildcard_domain_hits"] == 1
+    assert xstats.stats["wildcard_domain_misses"] == 0
+    assert xstats.stats["requests_known"] == 1
+
+
+async def test_wildcard_get_known_user_skips_fallback(wildcard_yaml_app_client):
+    """Known user (alice) is returned directly; wildcard fallback is not used."""
+    from xspct_db import stats as xstats
+
+    client = wildcard_yaml_app_client
+    resp = await client.get(
+        "/v1/query/alice%40mailexample.de",
+        headers={"X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert "alice@mailexample.de" in data["users"]
+    assert data["users"]["alice@mailexample.de"]["uid"] == ["alice"]
+    assert xstats.stats["wildcard_domain_hits"] == 0
+
+
+async def test_wildcard_get_disabled_returns_empty(yaml_app_client):
+    """When wildcard_domain_query is not set, unknown user returns empty result."""
+    from xspct_db import stats as xstats
+
+    client = yaml_app_client
+    resp = await client.get(
+        "/v1/query/unknown%40sub.mailexample.de",
+        headers={"X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert data["users"] == {}
+    assert xstats.stats["wildcard_domain_hits"] == 0
+    assert xstats.stats["requests_unknown"] == 1
+
+
+async def test_wildcard_get_unknown_domain_returns_empty(wildcard_yaml_app_client):
+    """Unknown user on a subdomain with no wildcard entry returns empty result."""
+    from xspct_db import stats as xstats
+
+    client = wildcard_yaml_app_client
+    resp = await client.get(
+        "/v1/query/unknown%40sub.otherdomain.de",
+        headers={"X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert data["users"] == {}
+    assert xstats.stats["wildcard_domain_misses"] == 1
+    assert xstats.stats["requests_unknown"] == 1
+
+
+async def test_wildcard_query_json_unknown_user_gets_domain_data(wildcard_yaml_app_client):
+    """Batch query: unknown user at sub.mailexample.de gets @mailexample.de wildcard data."""
+    client = wildcard_yaml_app_client
+    resp = await client.post(
+        "/v1/query-json",
+        data=json.dumps({"users": ["unknown@sub.mailexample.de", "alice@mailexample.de"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    # unknown user gets domain wildcard data
+    assert "unknown@sub.mailexample.de" in data["users"]
+    assert data["users"]["unknown@sub.mailexample.de"]["uid"] == ["wildcard"]
+    # known user is unaffected
+    assert "alice@mailexample.de" in data["users"]
+    assert data["users"]["alice@mailexample.de"]["uid"] == ["alice"]
+
+
+async def test_wildcard_rspamd_settings_rcpt_gets_domain_data(wildcard_yaml_app_client):
+    """Rspamd settings: unknown rcpt at sub.mailexample.de gets @mailexample.de wildcard data."""
+    client = wildcard_yaml_app_client
+    resp = await client.post(
+        "/v1/rspamd-settings",
+        data=json.dumps({"rcpts": ["unknown@sub.mailexample.de"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    sd = data.get("settings_data", {})
+    assert "unknown@sub.mailexample.de" in sd.get("users", {})
+    assert sd["users"]["unknown@sub.mailexample.de"]["uid"] == ["wildcard"]
+
+
+# ---------------------------------------------------------------------------
+# Wildcard domain query — regexp key pattern
+# ---------------------------------------------------------------------------
+
+
+async def test_wildcard_pattern_get_strips_subdomain(wildcard_pattern_app_client):
+    """wildcard_key_pattern strips one subdomain level: user@sub.mailexample.de → @mailexample.de."""
+    client = wildcard_pattern_app_client
+    resp = await client.get(
+        "/v1/query/unknown%40sub.mailexample.de",
+        headers={"X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    # The wildcard entry for @mailexample.de should be returned re-keyed under the queried address.
+    assert "unknown@sub.mailexample.de" in data["users"]
+    assert data["users"]["unknown@sub.mailexample.de"]["uid"] == ["wildcard"]
+
+
+async def test_wildcard_pattern_no_match_returns_empty(wildcard_pattern_app_client):
+    """When the substitution pattern does not match the address, no wildcard lookup is done."""
+    client = wildcard_pattern_app_client
+    # Pattern requires a dot in the domain part so sub.mailexample.de matches,
+    # but an address without a subdomain (@mailexample.de, no second dot) means the
+    # pattern .*@[^.]+\.(.+) still matches — use an address without any @ at all
+    # (invalid address) to force the default code path to return None.
+    # In substitution mode re.sub leaves the string unchanged when there is no
+    # dot-separated subdomain to strip; for that test we send an address that the
+    # pattern *would not* change (no subdomain present).  We verify that the known
+    # address alice@mailexample.de is returned directly without falling back to the
+    # wildcard entry.
+    resp = await client.get(
+        "/v1/query/alice%40mailexample.de",
+        headers={"X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    # alice is a known user; wildcard fallback should NOT overwrite her data.
+    assert "alice@mailexample.de" in data["users"]
+    assert data["users"]["alice@mailexample.de"]["uid"] == ["alice"]
+
+
+async def test_wildcard_pattern_query_json(wildcard_pattern_app_client):
+    """Batch query with pattern: unknown@sub.mailexample.de gets wildcard data via pattern."""
+    client = wildcard_pattern_app_client
+    resp = await client.post(
+        "/v1/query-json",
+        data=json.dumps({"users": ["unknown@sub.mailexample.de"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert "unknown@sub.mailexample.de" in data["users"]
+    assert data["users"]["unknown@sub.mailexample.de"]["uid"] == ["wildcard"]

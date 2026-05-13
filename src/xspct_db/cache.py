@@ -123,7 +123,9 @@ def get_response(key: tuple, cfg: dict[str, Any], s: str = "") -> bytes | None:
             ttl_remaining = -1
         logger.debug(
             "%s - response cache hit  key=%s  ttl_remaining=%.1fs",
-            s, key[0] if key else "?", ttl_remaining,
+            s,
+            key[0] if key else "?",
+            ttl_remaining,
         )
     return result
 
@@ -221,7 +223,10 @@ async def get_object_with_source(s: str, user: str, cfg: dict[str, Any]) -> tupl
                         ttl_remaining = -1
                     logger.debug(
                         "%s - L1 cache hit (positive) for %s → canonical=%s  ttl_remaining=%.1fs",
-                        s, user, canonical, ttl_remaining,
+                        s,
+                        user,
+                        canonical,
+                        ttl_remaining,
                     )
                 return user_obj, "local"
 
@@ -233,7 +238,9 @@ async def get_object_with_source(s: str, user: str, cfg: dict[str, Any]) -> tupl
                     ttl_remaining = -1
                 logger.debug(
                     "%s - L1 cache hit (negative) for %s  ttl_remaining=%.1fs",
-                    s, user, ttl_remaining,
+                    s,
+                    user,
+                    ttl_remaining,
                 )
             return False, "local"
 
@@ -274,7 +281,10 @@ async def get_object_with_source(s: str, user: str, cfg: dict[str, Any]) -> tupl
                     ttl_remaining = -1
                 logger.debug(
                     "%s - L2 Redis cache hit (positive) for %s → alias=%s  ttl_remaining=%ds",
-                    s, user, alias, ttl_remaining,
+                    s,
+                    user,
+                    alias,
+                    ttl_remaining,
                 )
             return user_obj, "redis"
     else:
@@ -296,7 +306,9 @@ async def get_object_with_source(s: str, user: str, cfg: dict[str, Any]) -> tupl
                     ttl_remaining = -1
                 logger.debug(
                     "%s - L2 Redis cache hit (negative) for %s  ttl_remaining=%ds",
-                    s, user, ttl_remaining,
+                    s,
+                    user,
+                    ttl_remaining,
                 )
             return False, "redis-negative"
 

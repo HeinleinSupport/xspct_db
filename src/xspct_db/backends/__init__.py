@@ -116,12 +116,23 @@ async def run_queries(
     userdata: dict[str, Any],
     user_to_pkey: dict[str, Any],
     cfg: dict[str, Any],
+    *,
+    wildcard: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any], str | bool]:
-    """Execute all configured queries and optionally cache the result."""
+    """Execute all configured queries and optionally cache the result.
+
+    When *wildcard* is ``True`` only queries that have
+    ``wildcard_domain_query: true`` in their config are executed.  This is used
+    for the fallback domain-wildcard lookup when a full-address query returns no
+    results.
+    """
     query_error: str | bool = False
     parallel_phase: list[tuple[str, dict[str, Any]]] = []
 
     for qk, qv in cfg.get("xspct_db_queries", {}).items():
+        if wildcard and not qv.get("wildcard_domain_query"):
+            continue
+
         if qv.get("use_result"):
             if parallel_phase:
                 userdata, user_to_pkey, query_error = await _run_parallel_phase(

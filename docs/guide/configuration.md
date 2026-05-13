@@ -359,6 +359,113 @@ xspct_db_mysql_pool_minconn: 1  # global default
 xspct_db_mysql_pool_maxconn: 20
 ```
 
+## Wildcard Domain Query
+
+When a user address is **not found** by the regular backend queries, the wildcard domain
+query fallback can return a domain-level default object instead of an empty result.
+
+Enable the fallback on a per-query basis with `wildcard_domain_query: true`.  When set,
+that query will be **re-executed** using a computed *wildcard key* (e.g. `@example.com`)
+as the lookup address.  The result (if any) is re-keyed under the original user address
+in the response.
+
+### Quick example
+
+```yaml
+xspct_db_queries:
+  users:
+    db_type: yaml
+    primary_key: mail
+    attr_list: ["*"]
+    search_filter: [mail]
+    wildcard_domain_query: true   # enable wildcard fallback for this query
+
+xspct_db_yaml_data:
+  users:
+    alice@mailexample.de:
+      mail: alice@mailexample.de
+      uid: alice
+    # Wildcard entry — returned for any unknown user at *.mailexample.de
+    "@mailexample.de":
+      mail: "@mailexample.de"
+      uid: wildcard
+      greylisting: "TRUE"
+```
+
+A request for `unknown@sub.mailexample.de` finds no direct match, so the fallback runs and
+looks up `@mailexample.de`.  The wildcard object is returned under the key
+`unknown@sub.mailexample.de` in the response.
+
+### Wildcard key computation
+
+The wildcard key is derived from the queried address by a configurable regex substitution.
+
+| Query option | Default | Description |
+|---|---|---|
+| `wildcard_key_pattern` | `.*@[^.]+\.(.+)` | Regex applied to the address |
+| `wildcard_key_replacement` | `@\1` | Replacement string for `re.sub` |
+
+**Default behaviour** — strip one subdomain level and prepend `@`:
+
+| Input address | Wildcard key |
+|---|---|
+| `user@sub.example.com` | `@example.com` |
+| `user@mail.sub.example.com` | `@sub.example.com` |
+| `user@example.com` | *(no match — no wildcard lookup)* |
+
+The default pattern requires at least one subdomain separator, so bare second-level
+domains (`user@example.com`) do not produce a wildcard key.  To match them as well,
+override the pattern:
+
+```yaml
+# Match any address and use the whole domain part as the wildcard key
+wildcard_key_pattern: '.*@(.+)'
+wildcard_key_replacement: '@\1'
+```
+
+**Match-only mode** — when `wildcard_key_replacement` is omitted, `re.search` is used
+instead of `re.sub`.  The first capture group (or the full match when no groups are
+defined) becomes the wildcard key:
+
+```yaml
+# Use the domain part directly as the wildcard key (match-only mode)
+wildcard_key_pattern: '@(.+)'
+```
+
+When the pattern does not match, the wildcard fallback is skipped for that address.
+
+### Stats counters
+
+The fallback updates two counters in the stats output:
+
+| Counter | Description |
+|---|---|
+| `wildcard_domain_hits` | Wildcard key was found in the backend |
+| `wildcard_domain_misses` | Wildcard key was not found (empty fallback) |
+
+### Full example with custom pattern
+
+```yaml
+xspct_db_queries:
+  users:
+    db_type: ldap
+    server: ldap://ldap.example.com
+    bind_dn: cn=reader,dc=example,dc=com
+    bind_dn_pw: secret
+    base_dn: ou=users,dc=example,dc=com
+    search_filter: "(mail={MAIL})"
+    search_filter_replace:
+      "{MAIL}": username
+    primary_key: mail
+    attr_list: [mail, uid, quota]
+    # Wildcard fallback: query @example.com for any unknown user@*.example.com
+    wildcard_domain_query: true
+    wildcard_key_pattern: '.*@[^.]+\.(.+)'
+    wildcard_key_replacement: '@\1'
+```
+
+---
+
 ## Concurrency
 
 xspct_db uses two `asyncio.Semaphore` instances to limit concurrent backend queries and prevent

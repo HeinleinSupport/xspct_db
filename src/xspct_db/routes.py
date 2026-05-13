@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from typing import Any
 from urllib.parse import unquote
 
@@ -466,11 +467,10 @@ def _compute_rcpt_settings(
         break
 
     if all_mapped and translated_values:
-        if len(set(translated_values)) == 1:
-            computed = translated_values[0]
-            if computed != reject_level_default:
-                actions["reject"] = computed
-                fired_rules.append(f"reject({computed})")
+        computed = min(translated_values)
+        if computed != reject_level_default:
+            actions["reject"] = computed
+            fired_rules.append(f"reject({computed})")
 
     return {
         "actions": actions,
@@ -524,6 +524,72 @@ class PingView(PydanticView):
 # ---------------------------------------------------------------------------
 # Query endpoints
 # ---------------------------------------------------------------------------
+
+
+# Default wildcard key pattern: strips one subdomain level.
+# ``user@sub.example.com`` → ``@example.com``
+_DEFAULT_WILDCARD_PATTERN = r".*@[^.]+\.(.+)"
+_DEFAULT_WILDCARD_REPLACEMENT = r"@\1"
+
+
+def _compute_wildcard_key(
+    address: str,
+    wildcard_queries: dict[str, dict[str, Any]],
+) -> str | None:
+    """Return the wildcard lookup key for *address*.
+
+    Two modes depending on what is configured on the first wildcard-enabled
+    query that defines ``wildcard_key_pattern``:
+
+    **Match mode** (only ``wildcard_key_pattern`` set):
+        The regex is applied with ``re.search``.  The first capture group is
+        returned when one is present; the full match is returned otherwise.
+        Returns ``None`` when the pattern does not match.
+
+    **Substitution mode** (both ``wildcard_key_pattern`` and
+    ``wildcard_key_replacement`` set):
+        ``re.sub(pattern, replacement, address)`` is used to transform the
+        entire address into the wildcard key.  Returns ``None`` when the
+        result equals the original address (i.e. no substitution took place).
+
+    When neither option is configured in the query, the built-in defaults
+    :data:`_DEFAULT_WILDCARD_PATTERN` / :data:`_DEFAULT_WILDCARD_REPLACEMENT`
+    are used, which strip one subdomain level::
+
+        user@sub.example.com  →  @example.com
+
+    Returns ``None`` when no wildcard key can be derived for *address*.
+    """
+    # Find the first pattern defined across all wildcard-enabled queries.
+    pattern: str | None = None
+    replacement: str | None = None
+    for qv in wildcard_queries.values():
+        p = qv.get("wildcard_key_pattern")
+        if p:
+            pattern = p
+            replacement = qv.get("wildcard_key_replacement")
+            break
+
+    # Fall back to built-in defaults.
+    if pattern is None:
+        pattern = _DEFAULT_WILDCARD_PATTERN
+        replacement = _DEFAULT_WILDCARD_REPLACEMENT
+
+    try:
+        if replacement is not None:
+            result = re.sub(pattern, replacement, address)
+            return result if result != address else None
+        m = re.search(pattern, address)
+    except re.error:
+        logger.warning("wildcard_key_pattern %r is not a valid regex", pattern)
+        return None
+
+    if replacement is not None:
+        # Already handled above; unreachable but keeps type checker happy.
+        return None  # pragma: no cover
+    if m is None:
+        return None
+    return m.group(1) if m.lastindex else m.group(0)
 
 
 class QueryView(PydanticView):
@@ -627,26 +693,80 @@ class QueryView(PydanticView):
                 ),
             )
 
+        # Determine whether any query is configured with wildcard_domain_query.
+        wildcard_queries = {qk: qv for qk, qv in cfg.get("xspct_db_queries", {}).items() if qv.get("wildcard_domain_query")}
+        domain_key = _compute_wildcard_key(user, wildcard_queries) if wildcard_queries else None
+        wildcard_enabled = domain_key is not None
+
+        # Negative cache hit: return empty unless wildcard fallback is possible.
         if isinstance(cache_object, bool) and not cache_object:
-            stats.stats["requests_unknown"] += 1
-            _body, _ctype = _serialize_body(userdata, fmt)
-            return _log_response(
-                s,
-                web.Response(
-                    body=_body,
-                    content_type=_ctype,
-                    headers={"Connection": "Keep-Alive"},
-                ),
-            )
+            if not wildcard_enabled:
+                stats.stats["requests_unknown"] += 1
+                _body, _ctype = _serialize_body(userdata, fmt)
+                return _log_response(
+                    s,
+                    web.Response(
+                        body=_body,
+                        content_type=_ctype,
+                        headers={"Connection": "Keep-Alive"},
+                    ),
+                )
+            # Negative cache for the full address is already set; skip the user
+            # backend and go straight to the domain wildcard lookup.
+            skip_user_backend = True
+        else:
+            skip_user_backend = False
 
         # --- Backend query ---
         user_parts = user.split("@", 1)
+        domain = user_parts[-1]
+        # domain_key is already computed above via _compute_wildcard_key; assert non-None
+        # here is safe because wildcard_enabled guards all code paths that use domain_key.
+
+        # Fast-path: check L1/L2 cache for the domain wildcard key before acquiring
+        # a semaphore slot.
+        if wildcard_enabled and (use_local or use_redis):
+            dom_cache_object, _ = await cache.get_object_with_source(s, domain_key, cfg)
+            if isinstance(dom_cache_object, dict):
+                stats.stats["wildcard_domain_hits"] += 1
+                stats.stats["requests_known"] += 1
+                userdata["users"][user] = dom_cache_object
+                _body, _ctype = _serialize_body(userdata, fmt)
+                return _log_response(
+                    s,
+                    web.Response(
+                        body=_body,
+                        content_type=_ctype,
+                        headers={"Connection": "Keep-Alive"},
+                    ),
+                )
+            if isinstance(dom_cache_object, bool) and not dom_cache_object:
+                stats.stats["wildcard_domain_misses"] += 1
+                stats.stats["requests_unknown"] += 1
+                _body, _ctype = _serialize_body(userdata, fmt)
+                return _log_response(
+                    s,
+                    web.Response(
+                        body=_body,
+                        content_type=_ctype,
+                        headers={"Connection": "Keep-Alive"},
+                    ),
+                )
+
         users = [
             {
                 "username": user,
                 "address": user,
                 "userpart": user_parts[0],
-                "domain": user_parts[-1],
+                "domain": domain,
+            }
+        ]
+        domain_users = [
+            {
+                "username": domain_key,
+                "address": domain_key,
+                "userpart": "",
+                "domain": domain,
             }
         ]
 
@@ -667,11 +787,47 @@ class QueryView(PydanticView):
 
         from xspct_db.backends import run_queries
 
+        async def _query_task() -> tuple[dict[str, Any], dict[str, Any], str | bool, bool]:
+            """Run the user query, then a domain wildcard query when needed.
+
+            Returns ``(userdata, user_to_pkey, query_error, used_wildcard)`` where
+            *used_wildcard* indicates whether the result came from the domain
+            fallback rather than a direct user match.
+            """
+            _ud: dict[str, Any] = {"users": {}}
+            _u2p: dict[str, Any] = {}
+            _err: str | bool = False
+
+            if not skip_user_backend:
+                _ud, _u2p, _err = await run_queries(s, user, use_redis, users, _ud, _u2p, cfg)
+                if isinstance(_err, str):
+                    return _ud, _u2p, _err, False
+                if user in _u2p:
+                    return _ud, _u2p, _err, False
+
+            if not wildcard_enabled:
+                return _ud, _u2p, _err, False
+
+            # Domain wildcard pass — only queries with wildcard_domain_query: true.
+            _dom_ud: dict[str, Any] = {"users": {}}
+            _dom_u2p: dict[str, Any] = {}
+            _dom_ud, _dom_u2p, _dom_err = await run_queries(
+                s, domain_key, use_redis, domain_users, _dom_ud, _dom_u2p, cfg, wildcard=True
+            )
+            if isinstance(_dom_err, str):
+                return _ud, _u2p, _dom_err, False
+            if domain_key in _dom_u2p:
+                _ud["users"][user] = _dom_ud["users"][domain_key]
+                _u2p[user] = user
+                return _ud, _u2p, False, True
+
+            return _ud, _u2p, _err, False
+
         try:
             result, timed_out = await _run_with_queues(
                 self.request.app,
                 s,
-                run_queries(s, user, use_redis, users, userdata, user_to_pkey, cfg),
+                _query_task(),
                 request_timeout,
             )
         except _ServiceOverloaded:
@@ -680,15 +836,19 @@ class QueryView(PydanticView):
         if timed_out:
             return _log_response(s, web.Response(status=504, text="504 Request Timeout"))
 
-        userdata, user_to_pkey, query_error = result
+        userdata, user_to_pkey, query_error, used_wildcard = result
 
         if isinstance(query_error, str):
             return _log_response(s, web.Response(status=500, text=query_error))
 
         if user in user_to_pkey:
             stats.stats["requests_known"] += 1
+            if used_wildcard:
+                stats.stats["wildcard_domain_hits"] += 1
         else:
             stats.stats["requests_unknown"] += 1
+            if wildcard_enabled:
+                stats.stats["wildcard_domain_misses"] += 1
 
         _body, _ctype = _serialize_body(userdata, fmt)
         return _log_response(
@@ -822,6 +982,33 @@ class QueryJsonView(PydanticView):
             userdata, user_to_pkey, query_error = await run_queries(s, "", False, users, userdata, user_to_pkey, cfg)
             if isinstance(query_error, str):
                 return b"", "application/json", query_error
+
+            # Wildcard domain fallback for users not found by any direct query.
+            wildcard_queries = {qk: qv for qk, qv in cfg.get("xspct_db_queries", {}).items() if qv.get("wildcard_domain_query")}
+            if wildcard_queries:
+                missing = [u for u in filtered_users if u not in user_to_pkey]
+                if missing:
+                    # Map each missing address to its wildcard key; skip those that
+                    # produce no key (e.g. pattern does not match).
+                    addr_to_wk = {u: _compute_wildcard_key(u, wildcard_queries) for u in missing}
+                    addr_to_wk = {u: wk for u, wk in addr_to_wk.items() if wk is not None}
+                    unique_domain_keys = list(dict.fromkeys(addr_to_wk.values()))
+                    dom_users = [
+                        {
+                            "username": dk,
+                            "address": dk,
+                            "userpart": "",
+                            "domain": dk[1:] if dk.startswith("@") else dk,
+                        }
+                        for dk in unique_domain_keys
+                    ]
+                    dom_ud, dom_u2p, dom_err = await run_queries(s, "", False, dom_users, {"users": {}}, {}, cfg, wildcard=True)
+                    if not isinstance(dom_err, str):
+                        for u, dk in addr_to_wk.items():
+                            if dk in dom_u2p:
+                                userdata["users"][u] = dom_ud["users"][dk]
+                                user_to_pkey[u] = u
+
             body, ctype = _serialize_body(userdata, fmt)
             cache.set_response(response_cache_key, (body, ctype), cfg)
             return body, ctype, False
@@ -980,6 +1167,37 @@ class RspamdSettingsView(PydanticView):
                     for addr in addresses
                 ]
                 userdata, user_to_pkey, _ = await run_queries(s, "", False, users, userdata, user_to_pkey, cfg)
+
+                # Wildcard domain fallback for addresses not found by any direct query.
+                wildcard_queries = {
+                    qk: qv for qk, qv in cfg.get("xspct_db_queries", {}).items() if qv.get("wildcard_domain_query")
+                }
+                if wildcard_queries:
+                    missing = [addr for addr in addresses if addr not in user_to_pkey]
+                    if missing:
+                        addr_to_wk = {addr: _compute_wildcard_key(addr, wildcard_queries) for addr in missing}
+                        addr_to_wk = {addr: wk for addr, wk in addr_to_wk.items() if wk is not None}
+                        unique_domain_keys = list(dict.fromkeys(addr_to_wk.values()))
+                        dom_users = [
+                            {
+                                "username": dk,
+                                "address": dk,
+                                "userpart": "",
+                                "domain": dk[1:] if dk.startswith("@") else dk,
+                            }
+                            for dk in unique_domain_keys
+                        ]
+                        from xspct_db.backends import run_queries as _run_queries_wc
+
+                        dom_ud, dom_u2p, dom_err = await _run_queries_wc(
+                            s, "", False, dom_users, {"users": {}}, {}, cfg, wildcard=True
+                        )
+                        if not isinstance(dom_err, str):
+                            for addr, dk in addr_to_wk.items():
+                                if dk in dom_u2p:
+                                    userdata["users"][addr] = dom_ud["users"][dk]
+                                    user_to_pkey[addr] = addr
+
             # Resolve rcpt query addresses to the primary keys used in userdata["users"].
             # This handles cases where the backend primary_key differs from the query address
             # (e.g. LDAP primary_key: uid, or a normalised mail attribute value).

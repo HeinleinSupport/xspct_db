@@ -139,9 +139,63 @@ def yaml_cfg(base_cfg: dict[str, Any]) -> dict[str, Any]:
                 "rbl": "FALSE",
                 "reject_level": "6",
             },
+            # wildcard domain entry — returned as fallback for unknown users at @mailexample.de
+            "@mailexample.de": {
+                "mail": "@mailexample.de",
+                "uid": "wildcard",
+                "greylisting": "TRUE",
+            },
         }
     }
     return cfg
+
+
+@pytest.fixture
+def wildcard_yaml_cfg(yaml_cfg: dict[str, Any]) -> dict[str, Any]:
+    """yaml_cfg with wildcard_domain_query enabled on the users query."""
+    cfg = dict(yaml_cfg)
+    cfg["xspct_db_queries"] = {
+        "users": {
+            **yaml_cfg["xspct_db_queries"]["users"],
+            "wildcard_domain_query": True,
+        }
+    }
+    return cfg
+
+
+@pytest.fixture
+async def wildcard_yaml_app_client(wildcard_yaml_cfg: dict[str, Any], aiohttp_client: Any) -> TestClient:
+    """Return an aiohttp test client with wildcard domain query enabled."""
+    stats.reset()
+    app = create_app(wildcard_yaml_cfg)
+    return await aiohttp_client(app)
+
+
+@pytest.fixture
+def wildcard_pattern_yaml_cfg(yaml_cfg: dict[str, Any]) -> dict[str, Any]:
+    """yaml_cfg with wildcard_domain_query + wildcard_key_pattern/replacement that strips one subdomain level.
+
+    Pattern ``.*@[^.]+\\.(.+)`` with replacement ``@\\1`` applied to
+    ``user@sub.mailexample.de`` produces ``@mailexample.de``.
+    """
+    cfg = dict(yaml_cfg)
+    cfg["xspct_db_queries"] = {
+        "users": {
+            **yaml_cfg["xspct_db_queries"]["users"],
+            "wildcard_domain_query": True,
+            "wildcard_key_pattern": r".*@[^.]+\.(.+)",
+            "wildcard_key_replacement": r"@\1",
+        }
+    }
+    return cfg
+
+
+@pytest.fixture
+async def wildcard_pattern_app_client(wildcard_pattern_yaml_cfg: dict[str, Any], aiohttp_client: Any) -> TestClient:
+    """Return an aiohttp test client with wildcard_key_pattern configured."""
+    stats.reset()
+    app = create_app(wildcard_pattern_yaml_cfg)
+    return await aiohttp_client(app)
 
 
 # ---------------------------------------------------------------------------
