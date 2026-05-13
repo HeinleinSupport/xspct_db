@@ -250,6 +250,18 @@ class _StatsCollector:
                 "background_errors",
             ),
             (
+                "xspct_db_wildcard_domain_hits_total",
+                "counter",
+                "Wildcard domain fallback hits",
+                "wildcard_domain_hits",
+            ),
+            (
+                "xspct_db_wildcard_domain_misses_total",
+                "counter",
+                "Wildcard domain fallback misses",
+                "wildcard_domain_misses",
+            ),
+            (
                 "xspct_db_prefilter_domain_count",
                 "gauge",
                 "Current number of domains in the prefilter set",

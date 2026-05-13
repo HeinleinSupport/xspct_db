@@ -123,3 +123,21 @@ async def test_metrics_handler_authorized_with_token(reg: CollectorRegistry):
     async with TestClient(TestServer(app)) as c:
         resp = await c.get("/metrics", headers={"X-Api-Key": "test-key"})
         assert resp.status == 200
+
+
+async def test_metrics_handler_body_contains_wildcard_counters(base_cfg: dict[str, Any], reg: CollectorRegistry):
+    """Body includes wildcard fallback counters exported from stats."""
+    from xspct_db import stats as xstats
+    from xspct_db.metrics.registry import register_stats_collector
+
+    xstats.reset()
+    xstats.stats["wildcard_domain_hits"] = 2
+    xstats.stats["wildcard_domain_misses"] = 1
+    register_stats_collector()
+
+    app = _make_metrics_app(base_cfg, reg)
+    async with TestClient(TestServer(app)) as c:
+        resp = await c.get("/metrics")
+        body = await resp.text()
+        assert "xspct_db_wildcard_domain_hits_total 2.0" in body
+        assert "xspct_db_wildcard_domain_misses_total 1.0" in body

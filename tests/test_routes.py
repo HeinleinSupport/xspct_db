@@ -9,6 +9,7 @@ import json
 
 import pytest
 
+from xspct_db import cache as xcache
 from xspct_db.server import create_app
 
 # ---------------------------------------------------------------------------
@@ -746,6 +747,40 @@ async def test_wildcard_pattern_query_json(wildcard_pattern_app_client):
     assert data["users"]["unknown@sub.mailexample.de"]["uid"] == ["wildcard"]
 
 
+async def test_wildcard_get_specific_user_not_shadowed_by_cached_domain_entry(
+    wildcard_cached_specific_user_app_client,
+):
+    """A cached wildcard entry must not mask a direct backend hit for a specific address."""
+    client = wildcard_cached_specific_user_app_client
+    cfg = client.app["config"]
+    await xcache.set_cache(
+        "test",
+        {"users": {"@mailexample.de": cfg["xspct_db_yaml_data"]["users"]["@mailexample.de"]}},
+        {"@mailexample.de": "@mailexample.de"},
+        cfg,
+    )
+
+    resp = await client.get(
+        "/v1/query/alice%40sub.mailexample.de",
+        headers={"X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert data["users"]["alice@sub.mailexample.de"]["uid"] == ["alice-sub"]
+
+
+async def test_wildcard_get_supports_multiple_query_key_strategies(wildcard_multi_query_app_client):
+    """Wildcard GET should consider all wildcard-enabled query key derivations, not just the first."""
+    client = wildcard_multi_query_app_client
+    resp = await client.get(
+        "/v1/query/unknown%40sub.mailexample.de",
+        headers={"X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert data["users"]["unknown@sub.mailexample.de"]["uid"] == ["wildcard"]
+
+
 # ---------------------------------------------------------------------------
 # Address rewrite rules
 # ---------------------------------------------------------------------------
@@ -860,3 +895,29 @@ async def test_rewrite_rspamd_wildcard_uses_canonical_address(rewrite_realm_wild
     data = json.loads(await resp.text())
     users = data.get("settings_data", {}).get("users", {})
     assert users["unknown@realm"]["uid"] == ["wildcard"]
+
+
+async def test_wildcard_query_json_supports_multiple_query_key_strategies(wildcard_multi_query_app_client):
+    """Batch wildcard fallback should consider all wildcard-enabled query key derivations."""
+    client = wildcard_multi_query_app_client
+    resp = await client.post(
+        "/v1/query-json",
+        data=json.dumps({"users": ["unknown@sub.mailexample.de"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert data["users"]["unknown@sub.mailexample.de"]["uid"] == ["wildcard"]
+
+
+async def test_wildcard_rspamd_supports_multiple_query_key_strategies(wildcard_multi_query_app_client):
+    """Rspamd wildcard fallback should consider all wildcard-enabled query key derivations."""
+    client = wildcard_multi_query_app_client
+    resp = await client.post(
+        "/v1/rspamd-settings",
+        data=json.dumps({"rcpts": ["unknown@sub.mailexample.de"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert data["settings_data"]["users"]["unknown@sub.mailexample.de"]["uid"] == ["wildcard"]

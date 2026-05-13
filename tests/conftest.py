@@ -200,6 +200,70 @@ async def wildcard_pattern_app_client(wildcard_pattern_yaml_cfg: dict[str, Any],
 
 
 @pytest.fixture
+def wildcard_multi_query_cfg(yaml_cfg: dict[str, Any]) -> dict[str, Any]:
+    """yaml_cfg with two wildcard-enabled queries that require different key derivations."""
+    cfg = dict(yaml_cfg)
+    base_query = yaml_cfg["xspct_db_queries"]["users"]
+    cfg["xspct_db_queries"] = {
+        "realm_users": {
+            **base_query,
+            "yaml_root": "users",
+            "wildcard_domain_query": True,
+            "wildcard_key_pattern": r"^.+@realm$",
+            "wildcard_key_replacement": r"@mailexample.de",
+        },
+        "subdomain_users": {
+            **base_query,
+            "yaml_root": "users",
+            "wildcard_domain_query": True,
+        },
+    }
+    return cfg
+
+
+@pytest.fixture
+async def wildcard_multi_query_app_client(wildcard_multi_query_cfg: dict[str, Any], aiohttp_client: Any) -> TestClient:
+    """Return an aiohttp test client with multiple wildcard query configurations."""
+    stats.reset()
+    app = create_app(wildcard_multi_query_cfg)
+    return await aiohttp_client(app)
+
+
+@pytest.fixture
+def wildcard_cached_specific_user_cfg(wildcard_yaml_cfg: dict[str, Any]) -> dict[str, Any]:
+    """wildcard_yaml_cfg with local cache enabled and a real subdomain user entry."""
+    cfg = dict(wildcard_yaml_cfg)
+    cfg["xspct_db_local_cache"] = {
+        "enabled": True,
+        "expire": 20,
+        "expire_negative": 20,
+        "max_entries": 10000,
+    }
+    cfg["xspct_db_yaml_data"] = {
+        **wildcard_yaml_cfg["xspct_db_yaml_data"],
+        "users": {
+            **wildcard_yaml_cfg["xspct_db_yaml_data"]["users"],
+            "alice@sub.mailexample.de": {
+                "mail": "alice@sub.mailexample.de",
+                "uid": "alice-sub",
+                "aliases": [],
+            },
+        },
+    }
+    return cfg
+
+
+@pytest.fixture
+async def wildcard_cached_specific_user_app_client(
+    wildcard_cached_specific_user_cfg: dict[str, Any], aiohttp_client: Any
+) -> TestClient:
+    """Return an aiohttp test client that can reproduce wildcard cache shadowing."""
+    stats.reset()
+    app = create_app(wildcard_cached_specific_user_cfg)
+    return await aiohttp_client(app)
+
+
+@pytest.fixture
 def rewrite_yaml_cfg(yaml_cfg: dict[str, Any]) -> dict[str, Any]:
     """yaml_cfg with a rewrite rule mapping *@relay.mailexample.de -> *@mailexample.de.
 
