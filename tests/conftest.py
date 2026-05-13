@@ -79,6 +79,7 @@ def base_cfg() -> dict[str, Any]:
         "xspct_db_reject_level_map": {"5": 13, "6": 15, "6.31": 17},
         "xspct_db_reject_level_default": 15,
         "xspct_db_rspamd_rules": None,
+        "xspct_db_rewrite_rules": None,
         "xspct_db_local_cache": {
             "enabled": False,
             "expire": 20,
@@ -195,6 +196,82 @@ async def wildcard_pattern_app_client(wildcard_pattern_yaml_cfg: dict[str, Any],
     """Return an aiohttp test client with wildcard_key_pattern configured."""
     stats.reset()
     app = create_app(wildcard_pattern_yaml_cfg)
+    return await aiohttp_client(app)
+
+
+@pytest.fixture
+def rewrite_yaml_cfg(yaml_cfg: dict[str, Any]) -> dict[str, Any]:
+    """yaml_cfg with a rewrite rule mapping *@relay.mailexample.de -> *@mailexample.de.
+
+    alice@relay.mailexample.de rewrites to alice@mailexample.de before the
+    backend is queried, so the existing alice entry is returned keyed under
+    the original relay address.
+    """
+    cfg = dict(yaml_cfg)
+    cfg["xspct_db_rewrite_rules"] = [
+        {
+            "pattern": r"^(.+)@relay\.mailexample\.de$",
+            "replacement": r"\1@mailexample.de",
+        }
+    ]
+    return cfg
+
+
+@pytest.fixture
+def rewrite_wildcard_yaml_cfg(wildcard_yaml_cfg: dict[str, Any]) -> dict[str, Any]:
+    """wildcard_yaml_cfg with a rewrite rule mapping *@relay.mailexample.de -> *@mailexample.de."""
+    cfg = dict(wildcard_yaml_cfg)
+    cfg["xspct_db_rewrite_rules"] = [
+        {
+            "pattern": r"^(.+)@relay\.mailexample\.de$",
+            "replacement": r"\1@mailexample.de",
+        }
+    ]
+    return cfg
+
+
+@pytest.fixture
+def rewrite_realm_wildcard_yaml_cfg(wildcard_yaml_cfg: dict[str, Any]) -> dict[str, Any]:
+    """wildcard_yaml_cfg with a rewrite that only enables wildcard lookup after rewriting.
+
+    unknown@realm rewrites to unknown@sub.mailexample.de. The original address
+    has no wildcard key, but the canonical rewritten address does.
+    """
+    cfg = dict(wildcard_yaml_cfg)
+    cfg["xspct_db_rewrite_rules"] = [
+        {
+            "pattern": r"^(.+)@realm$",
+            "replacement": r"\1@sub.mailexample.de",
+        }
+    ]
+    return cfg
+
+
+@pytest.fixture
+async def rewrite_yaml_app_client(rewrite_yaml_cfg: dict[str, Any], aiohttp_client: Any) -> TestClient:
+    """Return an aiohttp test client with address rewrite rules configured."""
+    stats.reset()
+    app = create_app(rewrite_yaml_cfg)
+    return await aiohttp_client(app)
+
+
+@pytest.fixture
+async def rewrite_wildcard_yaml_app_client(
+    rewrite_wildcard_yaml_cfg: dict[str, Any], aiohttp_client: Any
+) -> TestClient:
+    """Return an aiohttp test client with both rewrite rules and wildcard lookup enabled."""
+    stats.reset()
+    app = create_app(rewrite_wildcard_yaml_cfg)
+    return await aiohttp_client(app)
+
+
+@pytest.fixture
+async def rewrite_realm_wildcard_yaml_app_client(
+    rewrite_realm_wildcard_yaml_cfg: dict[str, Any], aiohttp_client: Any
+) -> TestClient:
+    """Return an aiohttp test client where wildcard fallback only works after rewriting."""
+    stats.reset()
+    app = create_app(rewrite_realm_wildcard_yaml_cfg)
     return await aiohttp_client(app)
 
 

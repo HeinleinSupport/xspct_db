@@ -17,7 +17,7 @@ from aiohttp_pydantic import PydanticView
 from aiohttp_pydantic.oas.typing import r200, r401, r500, r504
 from pydantic import ValidationError
 
-from xspct_db import cache, prefilter, stats
+from xspct_db import cache, prefilter, rewrite, stats
 from xspct_db.auth import verify_api_key
 from xspct_db.schemas import (
     ErrorResponse,
@@ -644,7 +644,13 @@ class QueryView(PydanticView):
         fmt = _detect_response_format(self.request)
         user = unquote(user)
 
-        if not prefilter.filter_user(s, user, self.request.app):
+        # Apply address rewrite rules before prefilter and cache lookup.
+        # query_user is the canonical address used for cache + backend;
+        # user (original) is preserved as the response key.
+        rewrite_rules = self.request.app.get("rewrite_rules", [])
+        query_user = rewrite.apply_rewrite_rules(user, rewrite_rules)
+
+        if not prefilter.filter_user(s, query_user, self.request.app):
             stats.stats["requests_unknown"] += 1
             _body, _ctype = _serialize_body({"users": {}}, fmt)
             return _log_response(
@@ -664,7 +670,7 @@ class QueryView(PydanticView):
         # --- L1 / L2 cache lookup ---
         cache_object = None
         if use_local or use_redis:
-            cache_object, cache_source = await cache.get_object_with_source(s, user, cfg)
+            cache_object, cache_source = await cache.get_object_with_source(s, query_user, cfg)
             if isinstance(cache_object, dict):
                 if cache_source == "local":
                     stats.stats["local_cache_hits"] += 1
@@ -695,7 +701,7 @@ class QueryView(PydanticView):
 
         # Determine whether any query is configured with wildcard_domain_query.
         wildcard_queries = {qk: qv for qk, qv in cfg.get("xspct_db_queries", {}).items() if qv.get("wildcard_domain_query")}
-        domain_key = _compute_wildcard_key(user, wildcard_queries) if wildcard_queries else None
+        domain_key = _compute_wildcard_key(query_user, wildcard_queries) if wildcard_queries else None
         wildcard_enabled = domain_key is not None
 
         # Negative cache hit: return empty unless wildcard fallback is possible.
@@ -718,7 +724,7 @@ class QueryView(PydanticView):
             skip_user_backend = False
 
         # --- Backend query ---
-        user_parts = user.split("@", 1)
+        user_parts = query_user.split("@", 1)
         domain = user_parts[-1]
         # domain_key is already computed above via _compute_wildcard_key; assert non-None
         # here is safe because wildcard_enabled guards all code paths that use domain_key.
@@ -755,8 +761,8 @@ class QueryView(PydanticView):
 
         users = [
             {
-                "username": user,
-                "address": user,
+                "username": query_user,
+                "address": query_user,
                 "userpart": user_parts[0],
                 "domain": domain,
             }
@@ -799,10 +805,15 @@ class QueryView(PydanticView):
             _err: str | bool = False
 
             if not skip_user_backend:
-                _ud, _u2p, _err = await run_queries(s, user, use_redis, users, _ud, _u2p, cfg)
+                _ud, _u2p, _err = await run_queries(s, query_user, use_redis, users, _ud, _u2p, cfg)
                 if isinstance(_err, str):
                     return _ud, _u2p, _err, False
-                if user in _u2p:
+                if query_user in _u2p:
+                    # Register the original address as an alias for the canonical
+                    # query address so subsequent cache lookups on either form hit.
+                    if user != query_user:
+                        _u2p[user] = _u2p[query_user]
+                        _ud["users"][user] = _ud["users"][_u2p[query_user]]
                     return _ud, _u2p, _err, False
 
             if not wildcard_enabled:
@@ -819,6 +830,8 @@ class QueryView(PydanticView):
             if domain_key in _dom_u2p:
                 _ud["users"][user] = _dom_ud["users"][domain_key]
                 _u2p[user] = user
+                if user != query_user:
+                    _u2p[query_user] = user
                 return _ud, _u2p, False, True
 
             return _ud, _u2p, _err, False
@@ -840,6 +853,11 @@ class QueryView(PydanticView):
 
         if isinstance(query_error, str):
             return _log_response(s, web.Response(status=500, text=query_error))
+
+        # When the address was rewritten, strip the canonical key so only the
+        # original address appears in the response.
+        if user != query_user and query_user in userdata["users"]:
+            userdata["users"].pop(query_user, None)
 
         if user in user_to_pkey:
             stats.stats["requests_known"] += 1
@@ -931,8 +949,18 @@ class QueryJsonView(PydanticView):
             logger.warning("%s - query-json user count %d exceeds limit %d", s, len(query_req.users), max_users)
             return _log_response(s, web.Response(status=400, text="400 Bad Request: too many users"))
 
-        # Apply prefilter
-        filtered_users = prefilter.filter_addresses(s, list(query_req.users), self.request.app)
+        # Apply rewrite rules then prefilter on the canonical (rewritten) addresses.
+        # rewrite_map: original -> canonical; originals are the response keys.
+        rewrite_rules = self.request.app.get("rewrite_rules", [])
+        rewrite_map: dict[str, str] = {
+            u: rewrite.apply_rewrite_rules(u, rewrite_rules) for u in query_req.users
+        }
+        # Deduplicated canonical addresses passed through prefilter.
+        canonical_users = list(dict.fromkeys(rewrite_map.values()))
+        filtered_canonical = prefilter.filter_addresses(s, canonical_users, self.request.app)
+        # Keep only originals whose canonical form survived the prefilter.
+        filtered_set = set(filtered_canonical)
+        filtered_users = [u for u in rewrite_map if rewrite_map[u] in filtered_set]
         if not filtered_users:
             logger.debug("%s prefilter: all users filtered out, returning empty result", s)
             _body, _ctype = _serialize_body({"users": {}}, _detect_response_format(self.request))
@@ -963,6 +991,8 @@ class QueryJsonView(PydanticView):
             )
         stats.stats["response_cache_misses"] += 1
 
+        # Build users list from deduplicated canonical addresses.
+        query_users = list(dict.fromkeys(rewrite_map[u] for u in filtered_users))
         users = [
             {
                 "username": u,
@@ -970,7 +1000,7 @@ class QueryJsonView(PydanticView):
                 "userpart": u.split("@", 1)[0],
                 "domain": u.split("@", 1)[-1],
             }
-            for u in filtered_users
+            for u in query_users
         ]
 
         async def _qj_task() -> tuple[bytes, str, str | bool]:
@@ -983,14 +1013,28 @@ class QueryJsonView(PydanticView):
             if isinstance(query_error, str):
                 return b"", "application/json", query_error
 
+            # Re-key results under original addresses and register alias mappings
+            # so the cache can be hit by either the original or rewritten address.
+            for orig, canon in rewrite_map.items():
+                if orig != canon and canon in user_to_pkey and orig in filtered_users:
+                    pkey = user_to_pkey[canon]
+                    userdata["users"][orig] = userdata["users"][pkey]
+                    user_to_pkey[orig] = orig
+
+            # Remove any canonical-address entries not requested under that name.
+            requested_originals = set(filtered_users)
+            userdata["users"] = {k: v for k, v in userdata["users"].items() if k in requested_originals}
+
             # Wildcard domain fallback for users not found by any direct query.
             wildcard_queries = {qk: qv for qk, qv in cfg.get("xspct_db_queries", {}).items() if qv.get("wildcard_domain_query")}
             if wildcard_queries:
                 missing = [u for u in filtered_users if u not in user_to_pkey]
                 if missing:
-                    # Map each missing address to its wildcard key; skip those that
-                    # produce no key (e.g. pattern does not match).
-                    addr_to_wk = {u: _compute_wildcard_key(u, wildcard_queries) for u in missing}
+                    # Map each missing original address to the wildcard key
+                    # derived from its canonical rewritten address.
+                    addr_to_wk = {
+                        u: _compute_wildcard_key(rewrite_map[u], wildcard_queries) for u in missing
+                    }
                     addr_to_wk = {u: wk for u, wk in addr_to_wk.items() if wk is not None}
                     unique_domain_keys = list(dict.fromkeys(addr_to_wk.values()))
                     dom_users = [
@@ -1146,9 +1190,19 @@ class RspamdSettingsView(PydanticView):
             )
         stats.stats["response_cache_misses"] += 1
 
-        # Look up all addresses from envelope sender + recipients
-        addresses = list(dict.fromkeys(addr for addr in ([rspamd_req.from_addr] + rspamd_req.rcpts) if addr))
-        addresses = prefilter.filter_addresses(s, addresses, self.request.app)
+        # Look up all addresses from envelope sender + recipients.
+        # Apply rewrite rules before the prefilter so the domain whitelist sees
+        # the canonical address.  Original addresses are kept as response keys.
+        raw_addresses = list(dict.fromkeys(addr for addr in ([rspamd_req.from_addr] + rspamd_req.rcpts) if addr))
+        rs_rewrite_rules = self.request.app.get("rewrite_rules", [])
+        rs_rewrite_map: dict[str, str] = {
+            addr: rewrite.apply_rewrite_rules(addr, rs_rewrite_rules) for addr in raw_addresses
+        }
+        canonical_addresses = list(dict.fromkeys(rs_rewrite_map.values()))
+        canonical_addresses = prefilter.filter_addresses(s, canonical_addresses, self.request.app)
+        filtered_canonical_set = set(canonical_addresses)
+        # Originals whose canonical form passed the prefilter.
+        addresses = [a for a in rs_rewrite_map if rs_rewrite_map[a] in filtered_canonical_set]
 
         async def _rs_task() -> tuple[bytes, str]:
             """Run backend queries and build the Rspamd settings response."""
@@ -1157,6 +1211,8 @@ class RspamdSettingsView(PydanticView):
             if addresses:
                 from xspct_db.backends import run_queries
 
+                # Build users list from deduplicated canonical (rewritten) addresses.
+                query_addresses = list(dict.fromkeys(rs_rewrite_map[a] for a in addresses))
                 users = [
                     {
                         "username": addr,
@@ -1164,9 +1220,20 @@ class RspamdSettingsView(PydanticView):
                         "userpart": addr.split("@", 1)[0],
                         "domain": addr.split("@", 1)[-1],
                     }
-                    for addr in addresses
+                    for addr in query_addresses
                 ]
                 userdata, user_to_pkey, _ = await run_queries(s, "", False, users, userdata, user_to_pkey, cfg)
+
+                # Re-key results under original addresses.
+                for orig, canon in rs_rewrite_map.items():
+                    if orig != canon and canon in user_to_pkey and orig in addresses:
+                        pkey = user_to_pkey[canon]
+                        userdata["users"][orig] = userdata["users"][pkey]
+                        user_to_pkey[orig] = orig
+
+                # Remove canonical-address entries not requested under that name.
+                requested_originals = set(addresses)
+                userdata["users"] = {k: v for k, v in userdata["users"].items() if k in requested_originals}
 
                 # Wildcard domain fallback for addresses not found by any direct query.
                 wildcard_queries = {
@@ -1175,7 +1242,10 @@ class RspamdSettingsView(PydanticView):
                 if wildcard_queries:
                     missing = [addr for addr in addresses if addr not in user_to_pkey]
                     if missing:
-                        addr_to_wk = {addr: _compute_wildcard_key(addr, wildcard_queries) for addr in missing}
+                        addr_to_wk = {
+                            addr: _compute_wildcard_key(rs_rewrite_map[addr], wildcard_queries)
+                            for addr in missing
+                        }
                         addr_to_wk = {addr: wk for addr, wk in addr_to_wk.items() if wk is not None}
                         unique_domain_keys = list(dict.fromkeys(addr_to_wk.values()))
                         dom_users = [

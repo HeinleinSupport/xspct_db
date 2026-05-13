@@ -59,7 +59,9 @@ async def _on_startup(app: web.Application) -> None:
 
         await create_mysql_pools(cfg)
 
-    from xspct_db import prefilter
+    from xspct_db import prefilter, rewrite
+
+    app["rewrite_rules"] = rewrite.compile_rules(cfg.get("xspct_db_rewrite_rules"))
 
     await prefilter.start(app, cfg)
 

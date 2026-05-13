@@ -91,6 +91,11 @@ DEFAULTS: dict[str, Any] = {
     # on user attributes.  Override to replace the built-in defaults entirely.
     # See routes._DEFAULT_RSPAMD_RULES for the schema.
     "xspct_db_rspamd_rules": None,
+    # Address rewrite rules applied to every query address before the prefilter.
+    # Each rule is a dict with 'pattern' (regex) and 'replacement' (re.sub string).
+    # Rules are evaluated in order; the first rule that changes the address wins.
+    # See xspct_db.rewrite for details.
+    "xspct_db_rewrite_rules": None,
     "xspct_db_local_cache": {
         "enabled": True,
         "expire": 20,

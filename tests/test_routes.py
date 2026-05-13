@@ -744,3 +744,119 @@ async def test_wildcard_pattern_query_json(wildcard_pattern_app_client):
     data = json.loads(await resp.text())
     assert "unknown@sub.mailexample.de" in data["users"]
     assert data["users"]["unknown@sub.mailexample.de"]["uid"] == ["wildcard"]
+
+
+# ---------------------------------------------------------------------------
+# Address rewrite rules
+# ---------------------------------------------------------------------------
+
+
+async def test_rewrite_get_response_keyed_under_original(rewrite_yaml_app_client):
+    """GET with a rewrite rule: response key is the original (relay) address."""
+    client = rewrite_yaml_app_client
+    resp = await client.get(
+        "/v1/query/alice%40relay.mailexample.de",
+        headers={"X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    # Response must be keyed under the original address sent by the client.
+    assert "alice@relay.mailexample.de" in data["users"]
+    # Data must come from the alice record (rewrite mapped to alice@mailexample.de).
+    assert data["users"]["alice@relay.mailexample.de"]["uid"] == ["alice"]
+    # Canonical form must NOT appear as a separate key.
+    assert "alice@mailexample.de" not in data["users"]
+
+
+async def test_rewrite_get_unmatched_address_unchanged(rewrite_yaml_app_client):
+    """GET for an address that does not match any rule is queried as-is."""
+    client = rewrite_yaml_app_client
+    resp = await client.get(
+        "/v1/query/alice%40mailexample.de",
+        headers={"X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert "alice@mailexample.de" in data["users"]
+    assert data["users"]["alice@mailexample.de"]["uid"] == ["alice"]
+
+
+async def test_rewrite_batch_response_keyed_under_original(rewrite_yaml_app_client):
+    """Batch POST with rewrite rule: all response keys are original addresses."""
+    client = rewrite_yaml_app_client
+    resp = await client.post(
+        "/v1/query-json",
+        data=json.dumps({"users": ["alice@relay.mailexample.de", "bob@relay.mailexample.de"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    # Both relay addresses must appear as keys.
+    assert "alice@relay.mailexample.de" in data["users"]
+    assert "bob@relay.mailexample.de" in data["users"]
+    # Data comes from the canonical records.
+    assert data["users"]["alice@relay.mailexample.de"]["uid"] == ["alice"]
+    assert data["users"]["bob@relay.mailexample.de"]["uid"] == ["bob"]
+    # Canonical addresses must NOT leak into the response.
+    assert "alice@mailexample.de" not in data["users"]
+    assert "bob@mailexample.de" not in data["users"]
+
+
+async def test_rewrite_batch_mixed_rewritten_and_direct(rewrite_yaml_app_client):
+    """Batch POST mixing rewritten relay addresses with direct addresses."""
+    client = rewrite_yaml_app_client
+    resp = await client.post(
+        "/v1/query-json",
+        data=json.dumps({"users": ["alice@relay.mailexample.de", "carol@mailexample.de"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert "alice@relay.mailexample.de" in data["users"]
+    assert data["users"]["alice@relay.mailexample.de"]["uid"] == ["alice"]
+    assert "carol@mailexample.de" in data["users"]
+    assert data["users"]["carol@mailexample.de"]["uid"] == ["carol"]
+
+
+async def test_rewrite_rspamd_settings_rewritten_rcpt(rewrite_yaml_app_client):
+    """Rspamd POST: rewritten rcpt address is resolved and keyed under original."""
+    client = rewrite_yaml_app_client
+    resp = await client.post(
+        "/v1/rspamd-settings",
+        data=json.dumps({"rcpts": ["alice@relay.mailexample.de"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    sd = data.get("settings_data", {})
+    users = sd.get("users", {})
+    assert "alice@relay.mailexample.de" in users
+    assert users["alice@relay.mailexample.de"]["uid"] == ["alice"]
+    assert "alice@mailexample.de" not in users
+
+
+async def test_rewrite_batch_wildcard_uses_canonical_address(rewrite_realm_wildcard_yaml_app_client):
+    """Batch wildcard fallback is derived from the rewritten canonical address."""
+    client = rewrite_realm_wildcard_yaml_app_client
+    resp = await client.post(
+        "/v1/query-json",
+        data=json.dumps({"users": ["unknown@realm"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    assert data["users"]["unknown@realm"]["uid"] == ["wildcard"]
+
+
+async def test_rewrite_rspamd_wildcard_uses_canonical_address(rewrite_realm_wildcard_yaml_app_client):
+    """Rspamd wildcard fallback is derived from the rewritten canonical rcpt address."""
+    client = rewrite_realm_wildcard_yaml_app_client
+    resp = await client.post(
+        "/v1/rspamd-settings",
+        data=json.dumps({"rcpts": ["unknown@realm"]}),
+        headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
+    )
+    assert resp.status == 200
+    data = json.loads(await resp.text())
+    users = data.get("settings_data", {}).get("users", {})
+    assert users["unknown@realm"]["uid"] == ["wildcard"]
