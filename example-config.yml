@@ -158,6 +158,16 @@ xspct_db_prefilter_patterns:
     #- "^postmaster@"
 
 # ---------------------------------------------------------------------------
+# Address rewrite rules — applied before prefilter, cache, and backend lookup
+# First rule that changes the address wins.
+# ---------------------------------------------------------------------------
+#xspct_db_rewrite_rules:
+#  - pattern: '^(.+)@relay\.mailexample\.de$'
+#    replacement: '\1@mailexample.de'
+#  - pattern: '^(.+)@realm$'
+#    replacement: '\1@sub.mailexample.de'
+
+# ---------------------------------------------------------------------------
 # Queries — one entry per named backend
 # ---------------------------------------------------------------------------
 xspct_db_queries:
@@ -168,6 +178,11 @@ xspct_db_queries:
     primary_key: mail
     attr_list: ["*"]
     search_filter: [mail, aliases]
+    # Wildcard fallback: when a direct lookup misses, re-run this query with a
+    # domain key such as @mailexample.de.
+    #wildcard_domain_query: true
+    #wildcard_key_pattern: '.*@[^.]+\.(.+)'
+    #wildcard_key_replacement: '@\1'
 
   # ── LDAP backend ────────────────────────────────────────────────────────────
   # Requires:  pip install "xspct_db[ldap]"
@@ -222,6 +237,11 @@ xspct_db_yaml_data:
     bob@mailexample.de:
       mail: bob@mailexample.de
       uid: bob
+    # Optional wildcard entry used when wildcard_domain_query is enabled.
+    #"@mailexample.de":
+    #  mail: "@mailexample.de"
+    #  uid: wildcard
+    #  greylisting: "TRUE"
 
 # ---------------------------------------------------------------------------
 # Key translation — rename attribute keys in every backend response

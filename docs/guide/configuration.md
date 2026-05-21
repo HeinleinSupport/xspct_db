@@ -369,6 +369,11 @@ that query will be **re-executed** using a computed *wildcard key* (e.g. `@examp
 as the lookup address.  The result (if any) is re-keyed under the original user address
 in the response.
 
+When multiple queries enable wildcard fallback, xspct_db derives a wildcard key for
+**each wildcard-enabled query** using that query's own `wildcard_key_pattern` and
+`wildcard_key_replacement` settings.  This allows different backends to use different
+key formats in the same request flow.
+
 ### Quick example
 
 ```yaml
@@ -434,6 +439,12 @@ wildcard_key_pattern: '@(.+)'
 
 When the pattern does not match, the wildcard fallback is skipped for that address.
 
+### Cache behaviour
+
+For `GET /v1/query/{user}`, wildcard cache entries are only used as a fast-path after the
+full address has already produced a negative cache hit.  This prevents a cached wildcard
+entry from masking a real backend object for a specific mailbox.
+
 ### Stats counters
 
 The fallback updates two counters in the stats output:
@@ -442,6 +453,13 @@ The fallback updates two counters in the stats output:
 |---|---|
 | `wildcard_domain_hits` | Wildcard key was found in the backend |
 | `wildcard_domain_misses` | Wildcard key was not found (empty fallback) |
+
+These counters are also exported on `/metrics` as:
+
+| Prometheus metric | Description |
+|---|---|
+| `xspct_db_wildcard_domain_hits_total` | Wildcard domain fallback hits |
+| `xspct_db_wildcard_domain_misses_total` | Wildcard domain fallback misses |
 
 ### Full example with custom pattern
 
@@ -463,6 +481,76 @@ xspct_db_queries:
     wildcard_key_pattern: '.*@[^.]+\.(.+)'
     wildcard_key_replacement: '@\1'
 ```
+
+---
+
+## Address Rewrite Rules
+
+`xspct_db_rewrite_rules` rewrites addresses **before** the prefilter, object cache lookup,
+and backend query execution.  Use this when client-visible addresses should map to a canonical
+mailbox before any whitelist or backend logic runs.
+
+Rules are evaluated in order.  The first rule that changes the address wins; later rules are
+not evaluated.
+
+| Top-level key | Type | Default | Description |
+|---|---|---|---|
+| `xspct_db_rewrite_rules` | `list[dict]` | `null` | Ordered rewrite rules, each with `pattern` and `replacement` |
+
+### Rule schema
+
+| Rule field | Required | Description |
+|---|---|---|
+| `pattern` | yes | Python regex compiled with `re.compile()` |
+| `replacement` | yes | Replacement string passed to `re.sub()` |
+
+### Behaviour summary
+
+- Rewrite runs before the prefilter, so domain whitelists and pattern filters see the canonical address.
+- The response is still keyed under the original address received from the client.
+- Both the original and canonical address forms are registered as cache aliases.
+- A rule only counts as a match when it actually changes the address string.
+
+### Example: relay-domain canonicalisation
+
+```yaml
+xspct_db_rewrite_rules:
+  - pattern: '^(.+)@relay\\.mailexample\\.de$'
+    replacement: '\\1@mailexample.de'
+```
+
+`alice@relay.mailexample.de` is rewritten to `alice@mailexample.de` for prefilter, cache,
+and backend lookup, but the response still returns:
+
+```json
+{
+  "users": {
+    "alice@relay.mailexample.de": {
+      "mail": ["alice@mailexample.de"],
+      "uid": ["alice"]
+    }
+  }
+}
+```
+
+### Example: enable wildcard only after rewriting
+
+```yaml
+xspct_db_rewrite_rules:
+  - pattern: '^(.+)@realm$'
+    replacement: '\\1@sub.mailexample.de'
+
+xspct_db_queries:
+  users:
+    db_type: yaml
+    primary_key: mail
+    attr_list: ["*"]
+    search_filter: [mail]
+    wildcard_domain_query: true
+```
+
+In that setup, `unknown@realm` rewrites to `unknown@sub.mailexample.de`, and the wildcard
+fallback then derives `@mailexample.de` from the rewritten canonical address.
 
 ---
 

@@ -82,11 +82,32 @@ and the serialised response is stored for reuse.
 Any query can be configured with `wildcard_domain_query: true`.  When a user address is not
 found by the regular lookup, xspct_db re-runs that query using a *wildcard key* derived from
 the address (default: strip one subdomain level → `user@sub.example.com` → `@example.com`).
-The fallback result is returned under the original address in the response.
+The fallback result is returned under the original address in the response.  When multiple
+queries enable wildcard fallback, each query derives its wildcard key from its own
+`wildcard_key_pattern` / `wildcard_key_replacement` settings.
 
 The key derivation is configurable per query via `wildcard_key_pattern` and
 `wildcard_key_replacement` (Python `re.sub` syntax).  See
 [docs/guide/configuration.md](docs/guide/configuration.md#wildcard-domain-query) for the
+full reference and examples.
+
+## Address Rewrite Rules
+
+`xspct_db_rewrite_rules` rewrites incoming addresses before the prefilter, object cache lookup,
+and backend queries run.  This is useful for relay domains, SASL realms, or other alias forms
+that should map to a canonical mailbox.
+
+Rules are evaluated in order, and the first rule that actually changes the address wins.
+The response is still keyed under the original address received from the client, and both the
+original and canonical forms are registered as cache aliases.
+
+```yaml
+xspct_db_rewrite_rules:
+  - pattern: '^(.+)@relay\\.example\\.com$'
+    replacement: '\\1@example.com'
+```
+
+See [docs/guide/configuration.md](docs/guide/configuration.md#address-rewrite-rules) for the
 full reference and examples.
 
 ## Concurrency
