@@ -1,0 +1,83 @@
+# SPDX-License-Identifier: EUPL-1.2
+# SPDX-FileCopyrightText: 2026 Carsten Rosenberg <c.rosenberg@heinlein-support.de>
+
+name: CI
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install lint tools
+        run: pip install ruff reuse
+
+      - name: ruff — lint
+        run: ruff check src/ tests/
+
+      - name: ruff — format check
+        run: ruff format --check src/ tests/
+
+      - name: REUSE compliance
+        run: reuse lint
+
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # bonsai (LDAP backend) requires libldap / libsasl2 headers at build time
+      - name: Install system dependencies
+        run: sudo apt-get install -y --no-install-recommends libldap2-dev libsasl2-dev
+
+      - name: Install project with all extras
+        run: pip install -e ".[all,dev]"
+
+      - name: Run tests
+        run: pytest --cov=xspct_db --cov-report=xml
+
+      - name: Upload coverage report
+        if: matrix.python-version == '3.12'
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system dependencies
+        run: sudo apt-get install -y --no-install-recommends libldap2-dev libsasl2-dev
+
+      - name: Install project with all extras
+        run: pip install -e ".[all,dev]" pip-audit
+
+      - name: pip-audit — scan installed packages
+        run: pip-audit

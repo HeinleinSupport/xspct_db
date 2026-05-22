@@ -9,6 +9,7 @@ path = [
     ".github/agents/xspct_db.agent.md",
     ".github/copilot-instructions.md",
     ".github/prompts/**",
+    ".github/workflows/**",
     ".gitignore",
     ".reuseignore",
     "CLAUDE.md",
