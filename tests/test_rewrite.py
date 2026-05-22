@@ -83,21 +83,25 @@ def test_apply_non_matching_rule_returns_original():
 
 
 def test_apply_first_match_wins():
-    rules = compile_rules([
-        {"pattern": r"^(.+)@relay\.example\.com$", "replacement": r"\1@first.example.com"},
-        {"pattern": r"^(.+)@relay\.example\.com$", "replacement": r"\1@second.example.com"},
-    ])
+    rules = compile_rules(
+        [
+            {"pattern": r"^(.+)@relay\.example\.com$", "replacement": r"\1@first.example.com"},
+            {"pattern": r"^(.+)@relay\.example\.com$", "replacement": r"\1@second.example.com"},
+        ]
+    )
     result = apply_rewrite_rules("alice@relay.example.com", rules)
     assert result == "alice@first.example.com"
 
 
 def test_apply_non_changing_rule_does_not_count_as_match():
     """A rule that produces the identical string is not treated as a match."""
-    rules = compile_rules([
-        # This pattern matches but replacement produces the same string.
-        {"pattern": r"^(.+)@example\.com$", "replacement": r"\1@example.com"},
-        {"pattern": r"^(.+)@example\.com$", "replacement": r"\1@canonical.example.com"},
-    ])
+    rules = compile_rules(
+        [
+            # This pattern matches but replacement produces the same string.
+            {"pattern": r"^(.+)@example\.com$", "replacement": r"\1@example.com"},
+            {"pattern": r"^(.+)@example\.com$", "replacement": r"\1@canonical.example.com"},
+        ]
+    )
     result = apply_rewrite_rules("alice@example.com", rules)
     assert result == "alice@canonical.example.com"
 

@@ -963,9 +963,7 @@ class QueryJsonView(PydanticView):
         # Apply rewrite rules then prefilter on the canonical (rewritten) addresses.
         # rewrite_map: original -> canonical; originals are the response keys.
         rewrite_rules = self.request.app.get("rewrite_rules", [])
-        rewrite_map: dict[str, str] = {
-            u: rewrite.apply_rewrite_rules(u, rewrite_rules) for u in query_req.users
-        }
+        rewrite_map: dict[str, str] = {u: rewrite.apply_rewrite_rules(u, rewrite_rules) for u in query_req.users}
         # Deduplicated canonical addresses passed through prefilter.
         canonical_users = list(dict.fromkeys(rewrite_map.values()))
         filtered_canonical = prefilter.filter_addresses(s, canonical_users, self.request.app)
@@ -1043,9 +1041,7 @@ class QueryJsonView(PydanticView):
                 if missing:
                     # Map each missing original address to the wildcard key
                     # derived from its canonical rewritten address.
-                    addr_to_wks = {
-                        u: _compute_wildcard_keys(rewrite_map[u], wildcard_queries) for u in missing
-                    }
+                    addr_to_wks = {u: _compute_wildcard_keys(rewrite_map[u], wildcard_queries) for u in missing}
                     addr_to_wks = {u: wks for u, wks in addr_to_wks.items() if wks}
                     unique_domain_keys = list(dict.fromkeys(dk for wks in addr_to_wks.values() for dk in wks))
                     dom_users = [
@@ -1208,9 +1204,7 @@ class RspamdSettingsView(PydanticView):
         # the canonical address.  Original addresses are kept as response keys.
         raw_addresses = list(dict.fromkeys(addr for addr in ([rspamd_req.from_addr] + rspamd_req.rcpts) if addr))
         rs_rewrite_rules = self.request.app.get("rewrite_rules", [])
-        rs_rewrite_map: dict[str, str] = {
-            addr: rewrite.apply_rewrite_rules(addr, rs_rewrite_rules) for addr in raw_addresses
-        }
+        rs_rewrite_map: dict[str, str] = {addr: rewrite.apply_rewrite_rules(addr, rs_rewrite_rules) for addr in raw_addresses}
         canonical_addresses = list(dict.fromkeys(rs_rewrite_map.values()))
         canonical_addresses = prefilter.filter_addresses(s, canonical_addresses, self.request.app)
         filtered_canonical_set = set(canonical_addresses)
@@ -1255,10 +1249,7 @@ class RspamdSettingsView(PydanticView):
                 if wildcard_queries:
                     missing = [addr for addr in addresses if addr not in user_to_pkey]
                     if missing:
-                        addr_to_wks = {
-                            addr: _compute_wildcard_keys(rs_rewrite_map[addr], wildcard_queries)
-                            for addr in missing
-                        }
+                        addr_to_wks = {addr: _compute_wildcard_keys(rs_rewrite_map[addr], wildcard_queries) for addr in missing}
                         addr_to_wks = {addr: wks for addr, wks in addr_to_wks.items() if wks}
                         unique_domain_keys = list(dict.fromkeys(dk for wks in addr_to_wks.values() for dk in wks))
                         dom_users = [

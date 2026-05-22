@@ -320,9 +320,7 @@ async def rewrite_yaml_app_client(rewrite_yaml_cfg: dict[str, Any], aiohttp_clie
 
 
 @pytest.fixture
-async def rewrite_wildcard_yaml_app_client(
-    rewrite_wildcard_yaml_cfg: dict[str, Any], aiohttp_client: Any
-) -> TestClient:
+async def rewrite_wildcard_yaml_app_client(rewrite_wildcard_yaml_cfg: dict[str, Any], aiohttp_client: Any) -> TestClient:
     """Return an aiohttp test client with both rewrite rules and wildcard lookup enabled."""
     stats.reset()
     app = create_app(rewrite_wildcard_yaml_cfg)
