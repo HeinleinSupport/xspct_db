@@ -172,7 +172,22 @@ async def query(
             for yk in yaml_keys:
                 if yk in yaml_data:
                     primary_key, entries = translate_entries(s, query_config, yaml_data[yk], cfg, force_prim_key)
-                    user_to_pkey[u["username"]] = primary_key
+                    pk_is_fallback = False
+                    if primary_key is None:
+                        logger.warning(
+                            "%s (%s) - (%s) - primary_key attr %r missing from entry; falling back to query key %r",
+                            s,
+                            timer(),
+                            query_name,
+                            query_config.get("primary_key", "mail"),
+                            u["username"],
+                        )
+                        primary_key = u["username"]
+                        pk_is_fallback = True
+                    if pk_is_fallback:
+                        user_to_pkey.setdefault(u["username"], primary_key)
+                    else:
+                        user_to_pkey[u["username"]] = primary_key
                     userdata = merge_userdata(s, primary_key, entries, userdata)
 
             logger.debug("%s (%s) - (%s) - after search: %s", s, timer(), query_name, u)

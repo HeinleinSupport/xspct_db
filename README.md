@@ -81,7 +81,7 @@ and the serialised response is stored for reuse.
 
 Any query can be configured with `wildcard_domain_query: true`.  When a user address is not
 found by the regular lookup, xspct_db re-runs that query using a *wildcard key* derived from
-the address (default: strip one subdomain level → `user@sub.example.com` → `@example.com`).
+the address (default: use the full domain part → `user@example.com` → `@example.com`).
 The fallback result is returned under the original address in the response.  When multiple
 queries enable wildcard fallback, each query derives its wildcard key from its own
 `wildcard_key_pattern` / `wildcard_key_replacement` settings.

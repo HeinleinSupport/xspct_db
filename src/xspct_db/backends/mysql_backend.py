@@ -225,6 +225,7 @@ async def query(
                     await cur.execute(combined_sql, combined_params)
                     search = await cur.fetchall()
                     logger.info("%s (%s) - (%s) - cursor descr: %s", s, timer(), query_name, cur.description)
+                    logger.debug("%s (%s) - (%s) - mysql raw results: %s", s, timer(), query_name, search)
             except aiomysql.Error as exc:
                 logger.exception("%s (%s) - (%s) - aiomysql.Error: %s", s, timer(), query_name, exc)
                 return userdata, user_to_pkey, "500 MySQL query error"
@@ -261,9 +262,32 @@ async def query(
         )
 
         pk, entries = translate_entries(s, query_config, entry, cfg, fpk)
+        pk_is_fallback = False
+        if pk is None and orig_username_r is not None:
+            logger.warning(
+                "%s (%s) - (%s) - primary_key attr %r missing from entry; falling back to query key %r",
+                s,
+                timer(),
+                query_name,
+                pkey_field,
+                orig_username_r,
+            )
+            pk = orig_username_r
+            pk_is_fallback = True
         if orig_username_r is not None:
-            user_to_pkey[orig_username_r] = pk
+            if pk_is_fallback:
+                user_to_pkey.setdefault(orig_username_r, pk)
+            else:
+                user_to_pkey[orig_username_r] = pk
         userdata = merge_userdata(s, pk, entries, userdata)
 
-    logger.debug("%s (%s) - (%s) - after search: %d results", s, timer(), query_name, len(search))
+        # Multi-address attribution: when this result row contains the queried
+        # address of another user (e.g. a rcpt that appears in an alias column
+        # of the same row as the from address), map that user to the same primary
+        # key and store the entry under their original username so it shows up in
+        # responses keyed by that address.
+        for uf in user_frags:
+            if uf["orig_username"] not in user_to_pkey:
+                if uf["effective_username"] in row_values or any(str(p) in row_values for p in uf["frag_params"]):
+                    user_to_pkey[uf["orig_username"]] = pk
     return userdata, user_to_pkey, error

@@ -200,11 +200,13 @@ async def get_object(s: str, user: str, cfg: dict[str, Any]) -> dict[str, Any] |
         False  – negative cache hit (user confirmed absent)
         None   – cache miss on both layers
     """
-    result, _source = await get_object_with_source(s, user, cfg)
+    result, _source, _canonical = await get_object_with_source(s, user, cfg)
     return result
 
 
-async def get_object_with_source(s: str, user: str, cfg: dict[str, Any]) -> tuple[dict[str, Any] | bool | None, str]:
+async def get_object_with_source(
+    s: str, user: str, cfg: dict[str, Any]
+) -> tuple[dict[str, Any] | bool | None, str, str | None]:
     """Return ``(value, source)`` for a two-level cache lookup.
 
     ``source`` is one of ``"local"``, ``"redis"``, ``"redis-negative"``,
@@ -228,7 +230,7 @@ async def get_object_with_source(s: str, user: str, cfg: dict[str, Any]) -> tupl
                         canonical,
                         ttl_remaining,
                     )
-                return user_obj, "local"
+                return user_obj, "local", canonical
 
         if user in _local_negative:  # type: ignore[operator]
             if logger.isEnabledFor(logging.DEBUG):
@@ -242,11 +244,11 @@ async def get_object_with_source(s: str, user: str, cfg: dict[str, Any]) -> tupl
                     user,
                     ttl_remaining,
                 )
-            return False, "local"
+            return False, "local", None
 
     # --- L2 (Redis) lookup ---
     if not is_enabled(cfg):
-        return None, "miss"
+        return None, "miss", None
 
     redis_cfg = cfg["xspct_db_redis_cache"]
     key_alias = redis_cfg["prefix_alias"] + user
@@ -256,7 +258,7 @@ async def get_object_with_source(s: str, user: str, cfg: dict[str, Any]) -> tupl
     except Exception as exc:
         logger.error("%s - error getting redis alias %s: %s", s, key_alias, exc)
         record_error(str(exc), cfg)
-        return None, "miss"
+        return None, "miss", None
 
     reset_errors()
 
@@ -267,7 +269,7 @@ async def get_object_with_source(s: str, user: str, cfg: dict[str, Any]) -> tupl
         except Exception as exc:
             logger.error("%s - error getting redis object %s: %s", s, key_obj, exc)
             record_error(str(exc), cfg)
-            return None, "miss"
+            return None, "miss", None
         if isinstance(raw, str):
             user_obj = json.loads(raw)
             # Backfill L1 from Redis result.
@@ -280,13 +282,14 @@ async def get_object_with_source(s: str, user: str, cfg: dict[str, Any]) -> tupl
                 except Exception:
                     ttl_remaining = -1
                 logger.debug(
-                    "%s - L2 Redis cache hit (positive) for %s → alias=%s  ttl_remaining=%ds",
+                    "%s - L2 Redis cache hit (positive) for %s \u2192 alias=%s  ttl_remaining=%ds  keys=%s",
                     s,
                     user,
                     alias,
                     ttl_remaining,
+                    list(user_obj.keys()),
                 )
-            return user_obj, "redis"
+            return user_obj, "redis", alias
     else:
         key_neg = redis_cfg["prefix_negative_alias"] + user
         try:
@@ -294,7 +297,7 @@ async def get_object_with_source(s: str, user: str, cfg: dict[str, Any]) -> tupl
         except Exception as exc:
             logger.error("%s - error getting redis neg alias %s: %s", s, key_neg, exc)
             record_error(str(exc), cfg)
-            return None, "miss"
+            return None, "miss", None
         if isinstance(neg, str):
             # Backfill L1 negative.
             if _ensure_l1(cfg):
@@ -310,9 +313,9 @@ async def get_object_with_source(s: str, user: str, cfg: dict[str, Any]) -> tupl
                     user,
                     ttl_remaining,
                 )
-            return False, "redis-negative"
+            return False, "redis-negative", None
 
-    return None, "miss"
+    return None, "miss", None
 
 
 async def set_cache(
@@ -345,13 +348,24 @@ async def set_cache(
     try:
         async with connection.pipeline(transaction=False) as pipe:
             for k, v in userdata.get("users", {}).items():
+                k = str(k)
                 pipe.setex(prefix_user + k, expire, json.dumps(v))
+                logger.debug(
+                    "%s - Redis write: user key=%s  fields=%s  expire=%ds",
+                    s,
+                    prefix_user + k,
+                    list(v.keys()),
+                    expire,
+                )
                 for av in v.get("aliases", []):
-                    pipe.setex(prefix_alias + av, expire, k)
+                    pipe.setex(prefix_alias + str(av), expire, k)
+                    logger.debug("%s - Redis write: alias %s \u2192 %s", s, prefix_alias + str(av), k)
                 for mv in v.get("mail", []):
-                    pipe.setex(prefix_alias + mv, expire, k)
+                    pipe.setex(prefix_alias + str(mv), expire, k)
+                    logger.debug("%s - Redis write: mail alias %s \u2192 %s", s, prefix_alias + str(mv), k)
             for k, v in user_to_pkey.items():
-                pipe.setex(prefix_alias + k, expire, v)
+                pipe.setex(prefix_alias + str(k), expire, str(v))
+                logger.debug("%s - Redis write: u2p alias %s \u2192 %s", s, prefix_alias + str(k), str(v))
             await pipe.execute()
     except Exception as exc:
         logger.error("%s - error in set_cache pipeline: %s", s, exc)

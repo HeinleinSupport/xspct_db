@@ -208,6 +208,7 @@ async def query(
             elapsed = timeit.default_timer() - t0
             stats.update_query_stats(query_name, elapsed)
             logger.info("%s (%s) - (%s) - ldap query took %.5fs, results: %d", s, timer(), query_name, elapsed, len(search))
+            logger.debug("%s (%s) - (%s) - ldap raw results: %s", s, timer(), query_name, search)
 
             # Phase 4: attribute result rows to input users and merge into userdata.
             pkey_field = query_config.get("primary_key", "mail")
@@ -237,11 +238,36 @@ async def query(
                 )
 
                 pk, entries = translate_entries(s, query_config, entry, cfg, fpk)
+                pk_is_fallback = False
+                if pk is None and orig_username_r is not None:
+                    logger.warning(
+                        "%s (%s) - (%s) - primary_key attr %r missing from entry; falling back to query key %r",
+                        s,
+                        timer(),
+                        query_name,
+                        pkey_field,
+                        orig_username_r,
+                    )
+                    pk = orig_username_r
+                    pk_is_fallback = True
                 if orig_username_r is not None:
-                    user_to_pkey[orig_username_r] = pk
+                    if pk_is_fallback:
+                        # Don't overwrite a properly resolved primary key with a
+                        # fallback self-key from an incomplete entry.
+                        user_to_pkey.setdefault(orig_username_r, pk)
+                    else:
+                        user_to_pkey[orig_username_r] = pk
                 userdata = merge_userdata(s, pk, entries, userdata)
 
-            logger.debug("%s (%s) - (%s) - after search: %d results", s, timer(), query_name, len(search))
+                # Multi-address attribution: when this result row contains the queried
+                # address of another user (e.g. a rcpt that appears as an alias on the
+                # same LDAP entry as the from address), map that user to the same primary
+                # key and store the entry under their original username so it shows up in
+                # responses keyed by that address.
+                for uf in user_frags:
+                    if uf["orig_username"] not in user_to_pkey:
+                        if uf["effective_username"] in row_values or any(fv in row_values for fv in uf["frag_values"]):
+                            user_to_pkey[uf["orig_username"]] = pk
 
     except (bonsai.errors.LDAPError, bonsai.errors.AuthenticationError, Exception) as exc:
         logger.exception("%s (%s) - (%s) - connection error: %s", s, timer(), query_name, exc)

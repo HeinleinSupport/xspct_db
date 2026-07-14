@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.7.5 (2026-07-14)
+
+### Features
+- Multi-address attribution in the LDAP and MySQL backends: when a single result row
+  carries the queried address of another user (e.g. a rcpt alias that shares an entry with
+  the from address), that user is now mapped to the same primary key so the rules engine can
+  resolve both addresses from one lookup
+- Per-address L1/L2 cache lookup in `/v1/query-json` and `/v1/rspamd-settings`: cached
+  addresses are served without a backend round-trip and only the misses are queried; on a
+  direct miss the wildcard domain key is probed so a cached domain wildcard resolves from
+  cache
+- Wildcard domain query results are now written back to the cache, so repeated wildcard
+  fallbacks are served from L1/L2 instead of re-querying the backend
+
+### Changes
+- Default wildcard key pattern changed from `.*@[^.]+\.(.+)` (strip one subdomain level) to
+  `.*@(.+)` (use the full domain part): `user@example.com` → `@example.com`. To keep the old
+  subdomain-stripping behaviour, set `wildcard_key_pattern: '.*@[^.]+\.(.+)'` per query
+- `settings_data.users` in `/v1/rspamd-settings` is now keyed strictly by primary key;
+  queried, rewritten, and wildcard-matched addresses appear in the `settings_data.aliases`
+  reverse map pointing to that primary key
+
+### Fixes
+- `translate_entries` derives the `primary_key` from the translated key field when the raw
+  primary-key attribute is absent (e.g. a `mail` → `uid` translation) and coerces the primary
+  key to `str`
+- Backends fall back to the query key as the primary key when the configured `primary_key`
+  attribute is missing from an entry (logged as WARNING) without overwriting an
+  already-resolved primary key
+- `cache.set_cache` and `get_object_with_source` coerce user keys and alias values to `str`
+  to avoid mixed-type cache keys
+
+### Internal
+- `cache.get_object_with_source` now returns a 3-tuple `(value, source, canonical_key)`; the
+  canonical key drives per-address cache probing in the batch and rspamd handlers
+
+### Documentation
+- Wildcard default-pattern reference updated in `docs/guide/configuration.md`, `README.md`,
+  and `example-config.yml`
+
 ## 0.7.4 (2026-05-13)
 
 ### Features

@@ -298,14 +298,14 @@ def rewrite_wildcard_yaml_cfg(wildcard_yaml_cfg: dict[str, Any]) -> dict[str, An
 def rewrite_realm_wildcard_yaml_cfg(wildcard_yaml_cfg: dict[str, Any]) -> dict[str, Any]:
     """wildcard_yaml_cfg with a rewrite that only enables wildcard lookup after rewriting.
 
-    unknown@realm rewrites to unknown@sub.mailexample.de. The original address
+    unknown@realm rewrites to unknown@mailexample.de. The original address
     has no wildcard key, but the canonical rewritten address does.
     """
     cfg = dict(wildcard_yaml_cfg)
     cfg["xspct_db_rewrite_rules"] = [
         {
             "pattern": r"^(.+)@realm$",
-            "replacement": r"\1@sub.mailexample.de",
+            "replacement": r"\1@mailexample.de",
         }
     ]
     return cfg

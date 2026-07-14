@@ -593,18 +593,18 @@ async def test_rspamd_settings_custom_rule_via_config(yaml_cfg, aiohttp_client):
 
 
 async def test_wildcard_get_unknown_user_returns_domain_data(wildcard_yaml_app_client):
-    """Unknown user at sub.mailexample.de maps to @mailexample.de wildcard entry."""
+    """Unknown user at mailexample.de maps to @mailexample.de wildcard entry."""
     from xspct_db import stats as xstats
 
     client = wildcard_yaml_app_client
     resp = await client.get(
-        "/v1/query/unknown%40sub.mailexample.de",
+        "/v1/query/unknown%40mailexample.de",
         headers={"X-Api-Key": "test-key"},
     )
     assert resp.status == 200
     data = json.loads(await resp.text())
-    assert "unknown@sub.mailexample.de" in data["users"]
-    assert data["users"]["unknown@sub.mailexample.de"]["uid"] == ["wildcard"]
+    assert "unknown@mailexample.de" in data["users"]
+    assert data["users"]["unknown@mailexample.de"]["uid"] == ["wildcard"]
     assert xstats.stats["wildcard_domain_hits"] == 1
     assert xstats.stats["wildcard_domain_misses"] == 0
     assert xstats.stats["requests_known"] == 1
@@ -659,36 +659,39 @@ async def test_wildcard_get_unknown_domain_returns_empty(wildcard_yaml_app_clien
 
 
 async def test_wildcard_query_json_unknown_user_gets_domain_data(wildcard_yaml_app_client):
-    """Batch query: unknown user at sub.mailexample.de gets @mailexample.de wildcard data."""
+    """Batch query: unknown user at mailexample.de gets @mailexample.de wildcard data."""
     client = wildcard_yaml_app_client
     resp = await client.post(
         "/v1/query-json",
-        data=json.dumps({"users": ["unknown@sub.mailexample.de", "alice@mailexample.de"]}),
+        data=json.dumps({"users": ["unknown@mailexample.de", "alice@mailexample.de"]}),
         headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
     )
     assert resp.status == 200
     data = json.loads(await resp.text())
     # unknown user gets domain wildcard data
-    assert "unknown@sub.mailexample.de" in data["users"]
-    assert data["users"]["unknown@sub.mailexample.de"]["uid"] == ["wildcard"]
+    assert "unknown@mailexample.de" in data["users"]
+    assert data["users"]["unknown@mailexample.de"]["uid"] == ["wildcard"]
     # known user is unaffected
     assert "alice@mailexample.de" in data["users"]
     assert data["users"]["alice@mailexample.de"]["uid"] == ["alice"]
 
 
 async def test_wildcard_rspamd_settings_rcpt_gets_domain_data(wildcard_yaml_app_client):
-    """Rspamd settings: unknown rcpt at sub.mailexample.de gets @mailexample.de wildcard data."""
+    """Rspamd settings: unknown rcpt at mailexample.de gets @mailexample.de wildcard data."""
     client = wildcard_yaml_app_client
     resp = await client.post(
         "/v1/rspamd-settings",
-        data=json.dumps({"rcpts": ["unknown@sub.mailexample.de"]}),
+        data=json.dumps({"rcpts": ["unknown@mailexample.de"]}),
         headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
     )
     assert resp.status == 200
     data = json.loads(await resp.text())
     sd = data.get("settings_data", {})
-    assert "unknown@sub.mailexample.de" in sd.get("users", {})
-    assert sd["users"]["unknown@sub.mailexample.de"]["uid"] == ["wildcard"]
+    # settings_data.users is keyed by primary key, not by query address.
+    assert "@mailexample.de" in sd.get("users", {})
+    assert sd["users"]["@mailexample.de"]["uid"] == ["wildcard"]
+    # The queried address must appear in aliases pointing to the primary key.
+    assert sd.get("aliases", {}).get("unknown@mailexample.de") == "@mailexample.de"
 
 
 # ---------------------------------------------------------------------------
@@ -773,12 +776,12 @@ async def test_wildcard_get_supports_multiple_query_key_strategies(wildcard_mult
     """Wildcard GET should consider all wildcard-enabled query key derivations, not just the first."""
     client = wildcard_multi_query_app_client
     resp = await client.get(
-        "/v1/query/unknown%40sub.mailexample.de",
+        "/v1/query/unknown%40mailexample.de",
         headers={"X-Api-Key": "test-key"},
     )
     assert resp.status == 200
     data = json.loads(await resp.text())
-    assert data["users"]["unknown@sub.mailexample.de"]["uid"] == ["wildcard"]
+    assert data["users"]["unknown@mailexample.de"]["uid"] == ["wildcard"]
 
 
 # ---------------------------------------------------------------------------
@@ -865,9 +868,11 @@ async def test_rewrite_rspamd_settings_rewritten_rcpt(rewrite_yaml_app_client):
     data = json.loads(await resp.text())
     sd = data.get("settings_data", {})
     users = sd.get("users", {})
-    assert "alice@relay.mailexample.de" in users
-    assert users["alice@relay.mailexample.de"]["uid"] == ["alice"]
-    assert "alice@mailexample.de" not in users
+    # settings_data.users is keyed by primary key (mail = alice@mailexample.de).
+    assert "alice@mailexample.de" in users
+    assert users["alice@mailexample.de"]["uid"] == ["alice"]
+    # The relay address is the rewrite original and must appear in aliases.
+    assert sd.get("aliases", {}).get("alice@relay.mailexample.de") == "alice@mailexample.de"
 
 
 async def test_rewrite_batch_wildcard_uses_canonical_address(rewrite_realm_wildcard_yaml_app_client):
@@ -893,8 +898,13 @@ async def test_rewrite_rspamd_wildcard_uses_canonical_address(rewrite_realm_wild
     )
     assert resp.status == 200
     data = json.loads(await resp.text())
-    users = data.get("settings_data", {}).get("users", {})
-    assert users["unknown@realm"]["uid"] == ["wildcard"]
+    sd = data.get("settings_data", {})
+    users = sd.get("users", {})
+    # settings_data.users is keyed by the wildcard entry's primary key.
+    assert "@mailexample.de" in users
+    assert users["@mailexample.de"]["uid"] == ["wildcard"]
+    # The rewrite-original address must resolve to the primary key via aliases.
+    assert sd.get("aliases", {}).get("unknown@realm") == "@mailexample.de"
 
 
 async def test_wildcard_query_json_supports_multiple_query_key_strategies(wildcard_multi_query_app_client):
@@ -902,12 +912,12 @@ async def test_wildcard_query_json_supports_multiple_query_key_strategies(wildca
     client = wildcard_multi_query_app_client
     resp = await client.post(
         "/v1/query-json",
-        data=json.dumps({"users": ["unknown@sub.mailexample.de"]}),
+        data=json.dumps({"users": ["unknown@mailexample.de"]}),
         headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
     )
     assert resp.status == 200
     data = json.loads(await resp.text())
-    assert data["users"]["unknown@sub.mailexample.de"]["uid"] == ["wildcard"]
+    assert data["users"]["unknown@mailexample.de"]["uid"] == ["wildcard"]
 
 
 async def test_wildcard_rspamd_supports_multiple_query_key_strategies(wildcard_multi_query_app_client):
@@ -915,9 +925,10 @@ async def test_wildcard_rspamd_supports_multiple_query_key_strategies(wildcard_m
     client = wildcard_multi_query_app_client
     resp = await client.post(
         "/v1/rspamd-settings",
-        data=json.dumps({"rcpts": ["unknown@sub.mailexample.de"]}),
+        data=json.dumps({"rcpts": ["unknown@mailexample.de"]}),
         headers={"Content-Type": "application/json", "X-Api-Key": "test-key"},
     )
     assert resp.status == 200
     data = json.loads(await resp.text())
-    assert data["settings_data"]["users"]["unknown@sub.mailexample.de"]["uid"] == ["wildcard"]
+    # settings_data.users is keyed by primary key (@mailexample.de for the wildcard entry).
+    assert data["settings_data"]["users"]["@mailexample.de"]["uid"] == ["wildcard"]

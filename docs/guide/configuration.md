@@ -407,24 +407,22 @@ The wildcard key is derived from the queried address by a configurable regex sub
 
 | Query option | Default | Description |
 |---|---|---|
-| `wildcard_key_pattern` | `.*@[^.]+\.(.+)` | Regex applied to the address |
+| `wildcard_key_pattern` | `.*@(.+)` | Regex applied to the address |
 | `wildcard_key_replacement` | `@\1` | Replacement string for `re.sub` |
 
-**Default behaviour** — strip one subdomain level and prepend `@`:
+**Default behaviour** — use the full domain part as the wildcard key:
 
 | Input address | Wildcard key |
 |---|---|
-| `user@sub.example.com` | `@example.com` |
-| `user@mail.sub.example.com` | `@sub.example.com` |
-| `user@example.com` | *(no match — no wildcard lookup)* |
+| `user@example.com` | `@example.com` |
+| `user@sub.example.com` | `@sub.example.com` |
 
-The default pattern requires at least one subdomain separator, so bare second-level
-domains (`user@example.com`) do not produce a wildcard key.  To match them as well,
-override the pattern:
+To strip one subdomain level instead (so that `user@sub.example.com` looks up
+`@example.com`), override the pattern:
 
 ```yaml
-# Match any address and use the whole domain part as the wildcard key
-wildcard_key_pattern: '.*@(.+)'
+# Strip one subdomain level
+wildcard_key_pattern: '.*@[^.]+\.(.+)'
 wildcard_key_replacement: '@\1'
 ```
 
@@ -476,10 +474,11 @@ xspct_db_queries:
       "{MAIL}": username
     primary_key: mail
     attr_list: [mail, uid, quota]
-    # Wildcard fallback: query @example.com for any unknown user@*.example.com
+    # Wildcard fallback: query @example.com for any unknown user@example.com
     wildcard_domain_query: true
-    wildcard_key_pattern: '.*@[^.]+\.(.+)'
-    wildcard_key_replacement: '@\1'
+    # Use default pattern (.*@(.+)) or override for subdomain stripping:
+    #wildcard_key_pattern: '.*@[^.]+\.(.+)'
+    #wildcard_key_replacement: '@\1'
 ```
 
 ---

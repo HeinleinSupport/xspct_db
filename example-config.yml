@@ -181,7 +181,7 @@ xspct_db_queries:
     # Wildcard fallback: when a direct lookup misses, re-run this query with a
     # domain key such as @mailexample.de.
     #wildcard_domain_query: true
-    #wildcard_key_pattern: '.*@[^.]+\.(.+)'
+    #wildcard_key_pattern: '.*@(.+)'   # default: full domain part → @example.com
     #wildcard_key_replacement: '@\1'
 
   # ── LDAP backend ────────────────────────────────────────────────────────────

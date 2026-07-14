@@ -78,7 +78,7 @@ def translate_entries(
 
         if k == key:
             p = split_values_into_list(s, v, k, query_config, cfg)
-            primary_key = p[0]
+            primary_key = str(p[0]) if p[0] is not None else None
 
         translated_key = key_translation.get(k, k)
         entries = maybe_list(s, entries, translated_key, query_config, cfg)
@@ -92,6 +92,12 @@ def translate_entries(
 
         if isinstance(entries["dn"], bonsai.ldapdn.LDAPDN):
             entries["dn"] = str(entries["dn"])
+
+    # If the primary_key attribute was absent from the raw entry but the key
+    # field ended up in entries via key_translation (e.g. mail → uid), derive
+    # primary_key from the translated value rather than returning None.
+    if primary_key is None and key in entries and entries[key]:
+        primary_key = entries[key][0]
 
     if force_primary_key:
         return force_primary_key, entries

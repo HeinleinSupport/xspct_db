@@ -246,7 +246,7 @@ async def test_get_object_with_source_reports_local_hit(redis_cfg):
     cache._local_users["alice@mailexample.de"] = {"uid": ["alice"]}
     cache._local_aliases["alice@mailexample.de"] = "alice@mailexample.de"
 
-    result, source = await cache.get_object_with_source("s", "alice@mailexample.de", redis_cfg)
+    result, source, _canonical = await cache.get_object_with_source("s", "alice@mailexample.de", redis_cfg)
     assert result == {"uid": ["alice"]}
     assert source == "local"
 
@@ -293,7 +293,7 @@ async def test_local_cache_negative_miss_falls_through_to_redis(fake_redis, redi
 async def test_get_object_with_source_reports_redis_negative_hit(fake_redis, redis_cfg):
     await fake_redis.set("xspct_db_neg_ghost@mailexample.de", "1")
 
-    result, source = await cache.get_object_with_source("s", "ghost@mailexample.de", redis_cfg)
+    result, source, _canonical = await cache.get_object_with_source("s", "ghost@mailexample.de", redis_cfg)
     assert result is False
     assert source == "redis-negative"
 

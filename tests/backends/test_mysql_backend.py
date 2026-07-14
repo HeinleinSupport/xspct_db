@@ -353,3 +353,61 @@ async def test_query_wildcard_catchall_multiple_users():
     assert error is False
     assert u2p.get("cr@mailexample.de") == "cr-primary@mailexample.de"
     assert "test@other.mailexample.de" not in u2p
+
+
+# ---------------------------------------------------------------------------
+# Tests – multi-address attribution (alias-in-same-row)
+# ---------------------------------------------------------------------------
+
+
+async def test_query_multi_address_attribution_alias_in_row():
+    """Both from-address (primary mail) and rcpt-address (alias column) resolve from one row.
+
+    Scenario: querying alice@mailexample.de (from) and alias@mailexample.de (rcpt).
+    MySQL returns one row where uid=alice@mailexample.de and aliases=alias@mailexample.de.
+    Both addresses must appear in user_to_pkey so the rules engine can look up the rcpt.
+    """
+    alias_cfg: dict[str, Any] = {
+        **MYSQL_CFG,
+        "xspct_db_queries": {
+            "mysql_users": {
+                **MYSQL_CFG["xspct_db_queries"]["mysql_users"],
+                "primary_key": "uid",
+                "query": "SELECT uid, aliases FROM users WHERE uid=%s OR aliases=%s",
+                "query_replace": None,
+                "where_params": ["username", "username"],
+            }
+        },
+    }
+    aiomysql_mock = _make_aiomysql_mock()
+    pool, cursor = _make_pool([{"uid": "alice@mailexample.de", "aliases": "alias@mailexample.de"}])
+    mysql_backend._pools["mysql_users"] = pool
+
+    users = [
+        {
+            "username": "alice@mailexample.de",
+            "address": "alice@mailexample.de",
+            "userpart": "alice",
+            "domain": "mailexample.de",
+        },
+        {
+            "username": "alias@mailexample.de",
+            "address": "alias@mailexample.de",
+            "userpart": "alias",
+            "domain": "mailexample.de",
+        },
+    ]
+
+    with pytest.MonkeyPatch().context() as mp:
+        mp.setitem(sys.modules, "aiomysql", aiomysql_mock)
+        ud, u2p, error = await mysql_backend.query("s", "mysql_users", users, {"users": {}}, {}, alias_cfg)
+
+    assert error is False
+    # Primary address attributed directly.
+    assert u2p.get("alice@mailexample.de") == "alice@mailexample.de"
+    # Alias address must also be attributed to the same primary key.
+    assert u2p.get("alias@mailexample.de") == "alice@mailexample.de"
+    # User is stored only under its primary key; re-keying for responses is the
+    # responsibility of the route handler, not the backend.
+    assert "alice@mailexample.de" in ud["users"]
+    assert "alias@mailexample.de" not in ud["users"]

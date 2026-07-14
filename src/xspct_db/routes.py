@@ -34,12 +34,16 @@ logger = logging.getLogger(__name__)
 def _build_settings_data(
     userdata: dict[str, Any],
     cfg: dict[str, Any],
+    user_to_pkey: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the structured ``settings_data`` block.
 
     Returns ``{"users": {...}, "aliases": {...}}`` where ``aliases`` is a
     reverse map of alias-value → primary-key, built from the fields named in
-    ``xspct_db_rspamd_alias_fields``.  Returns ``{}`` when no users were found.
+    ``xspct_db_rspamd_alias_fields`` and from *user_to_pkey* (query-address →
+    primary-key mappings that may not be present in the alias fields themselves,
+    e.g. wildcard-matched or directly-queried alias addresses).
+    Returns ``{}`` when no users were found.
     """
     users = userdata.get("users", {})
     if not users:
@@ -50,7 +54,14 @@ def _build_settings_data(
         for field in alias_fields:
             for val in udata.get(field, []):
                 if val != pkey:
-                    aliases[val] = pkey
+                    aliases[val] = str(pkey)
+    # Also add query-address → primary-key mappings so the consumer can resolve
+    # any queried address (e.g. an alias address or wildcard-matched address) back
+    # to the primary-key entry in settings_data.users.
+    if user_to_pkey:
+        for query_addr, pkey in user_to_pkey.items():
+            if pkey in users and str(query_addr) != str(pkey):
+                aliases.setdefault(str(query_addr), str(pkey))
     return {"users": users, "aliases": aliases}
 
 
@@ -526,9 +537,9 @@ class PingView(PydanticView):
 # ---------------------------------------------------------------------------
 
 
-# Default wildcard key pattern: strips one subdomain level.
-# ``user@sub.example.com`` → ``@example.com``
-_DEFAULT_WILDCARD_PATTERN = r".*@[^.]+\.(.+)"
+# Default wildcard key pattern: uses the full domain part as the wildcard key.
+# ``user@example.com`` → ``@example.com``
+_DEFAULT_WILDCARD_PATTERN = r".*@(.+)"
 _DEFAULT_WILDCARD_REPLACEMENT = r"@\1"
 
 
@@ -551,9 +562,9 @@ def _compute_wildcard_key_for_query(address: str, query_cfg: dict[str, Any]) -> 
 
     When neither option is configured in the query, the built-in defaults
     :data:`_DEFAULT_WILDCARD_PATTERN` / :data:`_DEFAULT_WILDCARD_REPLACEMENT`
-    are used, which strip one subdomain level::
+    are used, which use the full domain part as the wildcard key::
 
-        user@sub.example.com  →  @example.com
+        user@example.com  →  @example.com
 
     Returns ``None`` when no wildcard key can be derived for *address*.
     """
@@ -673,7 +684,7 @@ class QueryView(PydanticView):
         # --- L1 / L2 cache lookup ---
         cache_object = None
         if use_local or use_redis:
-            cache_object, cache_source = await cache.get_object_with_source(s, query_user, cfg)
+            cache_object, cache_source, _cc = await cache.get_object_with_source(s, query_user, cfg)
             if isinstance(cache_object, dict):
                 if cache_source == "local":
                     stats.stats["local_cache_hits"] += 1
@@ -706,6 +717,13 @@ class QueryView(PydanticView):
         wildcard_queries = {qk: qv for qk, qv in cfg.get("xspct_db_queries", {}).items() if qv.get("wildcard_domain_query")}
         domain_keys = _compute_wildcard_keys(query_user, wildcard_queries) if wildcard_queries else []
         wildcard_enabled = bool(domain_keys)
+        logger.info(
+            "%s - wildcard_enabled=%s domain_keys=%s wildcard_queries=%s",
+            s,
+            wildcard_enabled,
+            domain_keys,
+            list(wildcard_queries.keys()),
+        )
 
         # Negative cache hit: return empty unless wildcard fallback is possible.
         if isinstance(cache_object, bool) and not cache_object:
@@ -738,7 +756,7 @@ class QueryView(PydanticView):
         if skip_user_backend and wildcard_enabled and (use_local or use_redis):
             all_negative = True
             for domain_key in domain_keys:
-                dom_cache_object, _ = await cache.get_object_with_source(s, domain_key, cfg)
+                dom_cache_object, _, _dc = await cache.get_object_with_source(s, domain_key, cfg)
                 if isinstance(dom_cache_object, dict):
                     stats.stats["wildcard_domain_hits"] += 1
                     stats.stats["requests_known"] += 1
@@ -818,33 +836,51 @@ class QueryView(PydanticView):
                 if isinstance(_err, str):
                     return _ud, _u2p, _err, False
                 if query_user in _u2p:
+                    logger.info(
+                        "%s - user backend matched query_user=%r -> pkey=%r; skipping wildcard", s, query_user, _u2p[query_user]
+                    )
                     # Register the original address as an alias for the canonical
                     # query address so subsequent cache lookups on either form hit.
                     if user != query_user:
                         _u2p[user] = _u2p[query_user]
                         _ud["users"][user] = _ud["users"][_u2p[query_user]]
                     return _ud, _u2p, _err, False
+                logger.info(
+                    "%s - user backend returned no match for query_user=%r (u2p keys: %s)", s, query_user, list(_u2p.keys())
+                )
 
             if not wildcard_enabled:
+                logger.info("%s - wildcard disabled; returning user-backend result", s)
                 return _ud, _u2p, _err, False
 
             # Domain wildcard pass — only queries with wildcard_domain_query: true.
+            logger.info(
+                "%s - starting wildcard pass for domain_keys=%s domain_users=%s",
+                s,
+                domain_keys,
+                [du["username"] for du in domain_users],
+            )
             _dom_ud: dict[str, Any] = {"users": {}}
             _dom_u2p: dict[str, Any] = {}
-            _dom_ud, _dom_u2p, _dom_err = await run_queries(
-                s, "", use_redis, domain_users, _dom_ud, _dom_u2p, cfg, wildcard=True
-            )
+            _dom_ud, _dom_u2p, _dom_err = await run_queries(s, "", False, domain_users, _dom_ud, _dom_u2p, cfg, wildcard=True)
             if isinstance(_dom_err, str):
                 return _ud, _u2p, _dom_err, False
+            if use_redis and _dom_ud.get("users"):
+                await cache.set_cache(s, _dom_ud, _dom_u2p, cfg)
+            logger.info(
+                "%s - wildcard pass done: dom_u2p=%s dom_ud_keys=%s", s, dict(_dom_u2p), list(_dom_ud.get("users", {}).keys())
+            )
             matched_domain_key = next((domain_key for domain_key in domain_keys if domain_key in _dom_u2p), None)
             if matched_domain_key is not None:
                 wildcard_pkey = _dom_u2p[matched_domain_key]
+                logger.info("%s - wildcard matched: domain_key=%r -> pkey=%r", s, matched_domain_key, wildcard_pkey)
                 _ud["users"][user] = _dom_ud["users"][wildcard_pkey]
                 _u2p[user] = user
                 if user != query_user:
                     _u2p[query_user] = user
                 return _ud, _u2p, False, True
 
+            logger.info("%s - wildcard pass found no match for domain_keys=%s", s, domain_keys)
             return _ud, _u2p, _err, False
 
         try:
@@ -1018,32 +1054,82 @@ class QueryJsonView(PydanticView):
 
             userdata: dict[str, Any] = {"users": {}}
             user_to_pkey: dict[str, Any] = {}
-            userdata, user_to_pkey, query_error = await run_queries(s, "", False, users, userdata, user_to_pkey, cfg)
-            if isinstance(query_error, str):
-                return b"", "application/json", query_error
 
-            # Re-key results under original addresses and register alias mappings
-            # so the cache can be hit by either the original or rewritten address.
-            for orig, canon in rewrite_map.items():
-                if orig != canon and canon in user_to_pkey and orig in filtered_users:
-                    pkey = user_to_pkey[canon]
+            # Identify wildcard-capable queries up-front so the per-address cache
+            # loop can probe the domain key on a miss before falling back to the
+            # backend — avoids writing per-address aliases for wildcard resolutions.
+            wildcard_queries = {qk: qv for qk, qv in cfg.get("xspct_db_queries", {}).items() if qv.get("wildcard_domain_query")}
+
+            # Per-address L1/L2 cache lookup — query the backend only for misses.
+            # When a direct address miss occurs, also probe the wildcard domain key
+            # (e.g. @example.com for user@example.com) so a cached domain wildcard
+            # resolves without a backend round-trip.
+            backend_users = []
+            for u in users:
+                addr = u["username"]
+                cached_obj, _, canonical_key = await cache.get_object_with_source(s, addr, cfg)
+                if isinstance(cached_obj, dict):
+                    effective_pkey = canonical_key if canonical_key is not None else addr
+                    userdata["users"][effective_pkey] = cached_obj
+                    user_to_pkey[addr] = effective_pkey
+                else:
+                    resolved_via_wc_cache = False
+                    if wildcard_queries:
+                        for dk in _compute_wildcard_keys(addr, wildcard_queries):
+                            wc_obj, _, wc_canon = await cache.get_object_with_source(s, dk, cfg)
+                            if isinstance(wc_obj, dict):
+                                effective_pkey = wc_canon if wc_canon is not None else dk
+                                userdata["users"][effective_pkey] = wc_obj
+                                user_to_pkey[addr] = effective_pkey
+                                resolved_via_wc_cache = True
+                                break
+                    if not resolved_via_wc_cache:
+                        backend_users.append(u)
+
+            query_error: str | bool = False
+            if backend_users:
+                userdata, user_to_pkey, query_error = await run_queries(
+                    s, "", False, backend_users, userdata, user_to_pkey, cfg
+                )
+                if isinstance(query_error, str):
+                    return b"", "application/json", query_error
+                await cache.set_cache(s, userdata, user_to_pkey, cfg)
+
+            # Re-key results under original (pre-rewrite) query addresses for the
+            # response.  Handles both rewritten addresses (orig != canon) and
+            # non-rewritten addresses whose backend primary key differs from the
+            # query address (e.g. LDAP uid differs from the mail attribute).
+            for orig in filtered_users:
+                canon = rewrite_map[orig]
+                pkey = user_to_pkey.get(orig) or user_to_pkey.get(canon)
+                if pkey is not None and pkey in userdata["users"] and orig not in userdata["users"]:
                     userdata["users"][orig] = userdata["users"][pkey]
-                    user_to_pkey[orig] = orig
 
             # Remove any canonical-address entries not requested under that name.
             requested_originals = set(filtered_users)
             userdata["users"] = {k: v for k, v in userdata["users"].items() if k in requested_originals}
 
             # Wildcard domain fallback for users not found by any direct query.
-            wildcard_queries = {qk: qv for qk, qv in cfg.get("xspct_db_queries", {}).items() if qv.get("wildcard_domain_query")}
             if wildcard_queries:
                 missing = [u for u in filtered_users if u not in user_to_pkey]
                 if missing:
+                    logger.info(
+                        "%s - query-json wildcard fallback: missing=%s wildcard_queries=%s",
+                        s,
+                        missing,
+                        list(wildcard_queries.keys()),
+                    )
                     # Map each missing original address to the wildcard key
                     # derived from its canonical rewritten address.
                     addr_to_wks = {u: _compute_wildcard_keys(rewrite_map[u], wildcard_queries) for u in missing}
                     addr_to_wks = {u: wks for u, wks in addr_to_wks.items() if wks}
                     unique_domain_keys = list(dict.fromkeys(dk for wks in addr_to_wks.values() for dk in wks))
+                    logger.info(
+                        "%s - query-json wildcard pass: addr_to_wks=%s unique_domain_keys=%s",
+                        s,
+                        addr_to_wks,
+                        unique_domain_keys,
+                    )
                     dom_users = [
                         {
                             "username": dk,
@@ -1053,14 +1139,50 @@ class QueryJsonView(PydanticView):
                         }
                         for dk in unique_domain_keys
                     ]
-                    dom_ud, dom_u2p, dom_err = await run_queries(s, "", False, dom_users, {"users": {}}, {}, cfg, wildcard=True)
+                    dom_ud: dict[str, Any] = {"users": {}}
+                    dom_u2p: dict[str, Any] = {}
+                    backend_dom_users = []
+                    for du in dom_users:
+                        dk = du["username"]
+                        cached_dom, _, canonical_dk = await cache.get_object_with_source(s, dk, cfg)
+                        if isinstance(cached_dom, dict):
+                            effective_dk_pkey = canonical_dk if canonical_dk is not None else dk
+                            dom_ud["users"][effective_dk_pkey] = cached_dom
+                            dom_u2p[dk] = effective_dk_pkey
+                        else:
+                            backend_dom_users.append(du)
+                    dom_err: str | bool = False
+                    if backend_dom_users:
+                        dom_ud, dom_u2p, dom_err = await run_queries(
+                            s, "", False, backend_dom_users, dom_ud, dom_u2p, cfg, wildcard=True
+                        )
+                        if not isinstance(dom_err, str):
+                            await cache.set_cache(s, dom_ud, dom_u2p, cfg)
+                    logger.info(
+                        "%s - query-json wildcard pass done: dom_u2p=%s dom_ud_keys=%s dom_err=%s",
+                        s,
+                        dict(dom_u2p),
+                        list(dom_ud.get("users", {}).keys()),
+                        dom_err,
+                    )
                     if not isinstance(dom_err, str):
                         for u, domain_keys in addr_to_wks.items():
                             matched_domain_key = next((dk for dk in domain_keys if dk in dom_u2p), None)
                             if matched_domain_key is not None:
                                 wildcard_pkey = dom_u2p[matched_domain_key]
+                                logger.info(
+                                    "%s - query-json wildcard matched: addr=%r domain_key=%r -> pkey=%r",
+                                    s,
+                                    u,
+                                    matched_domain_key,
+                                    wildcard_pkey,
+                                )
                                 userdata["users"][u] = dom_ud["users"][wildcard_pkey]
-                                user_to_pkey[u] = u
+                                user_to_pkey[u] = wildcard_pkey
+                            else:
+                                logger.info(
+                                    "%s - query-json wildcard no match for addr=%r domain_keys=%s", s, u, addr_to_wks[u]
+                                )
 
             body, ctype = _serialize_body(userdata, fmt)
             cache.set_response(response_cache_key, (body, ctype), cfg)
@@ -1229,29 +1351,70 @@ class RspamdSettingsView(PydanticView):
                     }
                     for addr in query_addresses
                 ]
-                userdata, user_to_pkey, _ = await run_queries(s, "", False, users, userdata, user_to_pkey, cfg)
 
-                # Re-key results under original addresses.
-                for orig, canon in rs_rewrite_map.items():
-                    if orig != canon and canon in user_to_pkey and orig in addresses:
-                        pkey = user_to_pkey[canon]
-                        userdata["users"][orig] = userdata["users"][pkey]
-                        user_to_pkey[orig] = orig
-
-                # Remove canonical-address entries not requested under that name.
-                requested_originals = set(addresses)
-                userdata["users"] = {k: v for k, v in userdata["users"].items() if k in requested_originals}
-
-                # Wildcard domain fallback for addresses not found by any direct query.
+                # Identify wildcard-capable queries up-front so the per-address cache
+                # loop can probe the domain key on a miss before falling back to the
+                # backend — avoids writing per-address aliases for wildcard resolutions.
                 wildcard_queries = {
                     qk: qv for qk, qv in cfg.get("xspct_db_queries", {}).items() if qv.get("wildcard_domain_query")
                 }
+
+                # Per-address L1/L2 cache lookup — query the backend only for misses.
+                # When a direct address miss occurs, also probe the wildcard domain key
+                # (e.g. @example.com for user@example.com) so a cached domain wildcard
+                # resolves without a backend round-trip.
+                backend_users = []
+                for u in users:
+                    addr = u["username"]
+                    cached_obj, _, canonical_key = await cache.get_object_with_source(s, addr, cfg)
+                    if isinstance(cached_obj, dict):
+                        effective_pkey = canonical_key if canonical_key is not None else addr
+                        userdata["users"][effective_pkey] = cached_obj
+                        user_to_pkey[addr] = effective_pkey
+                    else:
+                        resolved_via_wc_cache = False
+                        if wildcard_queries:
+                            for dk in _compute_wildcard_keys(addr, wildcard_queries):
+                                wc_obj, _, wc_canon = await cache.get_object_with_source(s, dk, cfg)
+                                if isinstance(wc_obj, dict):
+                                    effective_pkey = wc_canon if wc_canon is not None else dk
+                                    userdata["users"][effective_pkey] = wc_obj
+                                    user_to_pkey[addr] = effective_pkey
+                                    resolved_via_wc_cache = True
+                                    break
+                        if not resolved_via_wc_cache:
+                            backend_users.append(u)
+
+                if backend_users:
+                    userdata, user_to_pkey, _ = await run_queries(s, "", False, backend_users, userdata, user_to_pkey, cfg)
+                    await cache.set_cache(s, userdata, user_to_pkey, cfg)
+                # Re-key results for rewritten addresses: update user_to_pkey so the
+                # original (pre-rewrite) address resolves to the same primary key as
+                # the canonical address.  Do NOT copy user objects under the original
+                # address — settings_data.users is keyed by primary key only.
+                for orig, canon in rs_rewrite_map.items():
+                    if orig != canon and canon in user_to_pkey and orig in addresses:
+                        user_to_pkey[orig] = user_to_pkey[canon]
+
+                # Wildcard domain fallback for addresses not found by any direct query.
                 if wildcard_queries:
                     missing = [addr for addr in addresses if addr not in user_to_pkey]
                     if missing:
+                        logger.info(
+                            "%s - rspamd wildcard fallback: missing=%s wildcard_queries=%s",
+                            s,
+                            missing,
+                            list(wildcard_queries.keys()),
+                        )
                         addr_to_wks = {addr: _compute_wildcard_keys(rs_rewrite_map[addr], wildcard_queries) for addr in missing}
                         addr_to_wks = {addr: wks for addr, wks in addr_to_wks.items() if wks}
                         unique_domain_keys = list(dict.fromkeys(dk for wks in addr_to_wks.values() for dk in wks))
+                        logger.info(
+                            "%s - rspamd wildcard pass: addr_to_wks=%s unique_domain_keys=%s",
+                            s,
+                            addr_to_wks,
+                            unique_domain_keys,
+                        )
                         dom_users = [
                             {
                                 "username": dk,
@@ -1263,16 +1426,58 @@ class RspamdSettingsView(PydanticView):
                         ]
                         from xspct_db.backends import run_queries as _run_queries_wc
 
-                        dom_ud, dom_u2p, dom_err = await _run_queries_wc(
-                            s, "", False, dom_users, {"users": {}}, {}, cfg, wildcard=True
+                        dom_ud: dict[str, Any] = {"users": {}}
+                        dom_u2p: dict[str, Any] = {}
+                        backend_dom_users = []
+                        for du in dom_users:
+                            dk = du["username"]
+                            cached_dom, _, canonical_dk = await cache.get_object_with_source(s, dk, cfg)
+                            if isinstance(cached_dom, dict):
+                                effective_dk_pkey = canonical_dk if canonical_dk is not None else dk
+                                dom_ud["users"][effective_dk_pkey] = cached_dom
+                                dom_u2p[dk] = effective_dk_pkey
+                            else:
+                                backend_dom_users.append(du)
+                        dom_err: str | bool = False
+                        if backend_dom_users:
+                            dom_ud, dom_u2p, dom_err = await _run_queries_wc(
+                                s, "", False, backend_dom_users, dom_ud, dom_u2p, cfg, wildcard=True
+                            )
+                            if not isinstance(dom_err, str):
+                                await cache.set_cache(s, dom_ud, dom_u2p, cfg)
+                        logger.info(
+                            "%s - rspamd wildcard pass done: dom_u2p=%s dom_ud_keys=%s dom_err=%s",
+                            s,
+                            dict(dom_u2p),
+                            list(dom_ud.get("users", {}).keys()),
+                            dom_err,
                         )
                         if not isinstance(dom_err, str):
                             for addr, domain_keys in addr_to_wks.items():
                                 matched_domain_key = next((dk for dk in domain_keys if dk in dom_u2p), None)
                                 if matched_domain_key is not None:
                                     wildcard_pkey = dom_u2p[matched_domain_key]
-                                    userdata["users"][addr] = dom_ud["users"][wildcard_pkey]
-                                    user_to_pkey[addr] = addr
+                                    logger.info(
+                                        "%s - rspamd wildcard matched: addr=%r domain_key=%r -> pkey=%r",
+                                        s,
+                                        addr,
+                                        matched_domain_key,
+                                        wildcard_pkey,
+                                    )
+                                    # Store under primary key so settings_data.users is keyed correctly.
+                                    if wildcard_pkey not in userdata["users"]:
+                                        userdata["users"][wildcard_pkey] = dom_ud["users"][wildcard_pkey]
+                                    user_to_pkey[addr] = wildcard_pkey
+                                else:
+                                    logger.info(
+                                        "%s - rspamd wildcard no match for addr=%r domain_keys=%s", s, addr, addr_to_wks[addr]
+                                    )
+
+            # Keep only primary-key entries for users that were actually found.
+            # This removes alias-keyed copies added by the multi-address attribution
+            # fix and any canonical-address entries that differ from the primary key.
+            found_primary_keys: set[Any] = {user_to_pkey[addr] for addr in addresses if addr in user_to_pkey}
+            userdata["users"] = {k: v for k, v in userdata["users"].items() if k in found_primary_keys}
 
             # Resolve rcpt query addresses to the primary keys used in userdata["users"].
             # This handles cases where the backend primary_key differs from the query address
@@ -1280,7 +1485,7 @@ class RspamdSettingsView(PydanticView):
             rcpt_primary_keys = [user_to_pkey.get(r, r) for r in rspamd_req.rcpts]
             computed = _compute_rcpt_settings(userdata, rcpt_primary_keys, cfg)
             fired_rules: list[str] = computed.pop("fired_rules", [])
-            sd = _build_settings_data(userdata, cfg)
+            sd = _build_settings_data(userdata, cfg, user_to_pkey)
             if sd:
                 sd["profile"] = {"applied_rules": fired_rules}
             elif fired_rules:

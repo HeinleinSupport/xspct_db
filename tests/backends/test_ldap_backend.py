@@ -362,3 +362,74 @@ async def test_query_attribution_via_frag_values():
     assert error is False
     assert "cr-primary@mailexample.de" in ud["users"]
     assert u2p.get("cr@mailexample.de") == "cr-primary@mailexample.de"
+
+
+# ---------------------------------------------------------------------------
+# Tests – multi-address attribution (alias-in-same-row)
+# ---------------------------------------------------------------------------
+
+
+async def test_query_multi_address_attribution_alias_in_row():
+    """Both from-address (primary mail) and rcpt-address (alias) map to the same entry.
+
+    Scenario: from=c.rosenberg@heinlein.de, rcpts=[c.rosenberg@mailbox.org]
+    LDAP returns one entry with mail=heinlein AND mailLocalAddress=mailbox.org.
+    Both addresses must appear in user_to_pkey so the rules engine can resolve
+    the rcpt to the correct user object.
+    """
+    bonsai_mock = _make_bonsai_mock()
+    conn = AsyncMock()
+    conn.search = AsyncMock(
+        return_value=[
+            {
+                "mail": "cr@mailexample.de",
+                "uid": "cr",
+                "mailLocalAddress": "cr-alias@mailexample.de",
+            },
+        ]
+    )
+    ldap_backend._pools["ldap_users"] = _make_pool(conn)
+
+    cfg = {
+        **LDAP_CFG,
+        "xspct_db_queries": {
+            "ldap_users": {
+                **LDAP_CFG["xspct_db_queries"]["ldap_users"],
+                "search_filter": "(|(mail=%u)(mailLocalAddress=%u))",
+                "search_filter_replace": {"%u": "username"},
+                "primary_key": "mail",
+                "attr_list": ["*"],
+            }
+        },
+    }
+    users = [
+        {"username": "cr@mailexample.de", "address": "cr@mailexample.de", "userpart": "cr", "domain": "mailexample.de"},
+        {
+            "username": "cr-alias@mailexample.de",
+            "address": "cr-alias@mailexample.de",
+            "userpart": "cr-alias",
+            "domain": "mailexample.de",
+        },
+    ]
+
+    with pytest.MonkeyPatch().context() as mp:
+        mp.setitem(sys.modules, "bonsai", bonsai_mock)
+        mp.setitem(sys.modules, "bonsai.asyncio", bonsai_mock)
+        ud, u2p, error = await ldap_backend.query(
+            "s",
+            "ldap_users",
+            users,
+            {"users": {}},
+            {},
+            cfg,
+        )
+
+    assert error is False
+    # Primary address attributed directly.
+    assert u2p.get("cr@mailexample.de") == "cr@mailexample.de"
+    # Alias address must also be attributed to the same primary key.
+    assert u2p.get("cr-alias@mailexample.de") == "cr@mailexample.de"
+    # User is stored only under its primary key; re-keying for responses is the
+    # responsibility of the route handler, not the backend.
+    assert "cr@mailexample.de" in ud["users"]
+    assert "cr-alias@mailexample.de" not in ud["users"]
