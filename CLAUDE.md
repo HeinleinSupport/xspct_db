@@ -126,22 +126,33 @@ Background tasks are managed by `_finalize_background()`: always releases `bg_se
 
 ## Commit Convention
 
-All commits must follow the format: **`[Tag] Description`**
+Commits follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
+**`<type>(<scope>): <description>`**. Full rules, the type/scope tables, and
+the commit-history cutover point live in `CONTRIBUTING.md` — that file is the
+authoritative source; the summary below just repeats the operationally
+important bits.
 
-| Tag | When to use |
-|-----|-------------|
-| `[Feature]` | New user-visible feature |
-| `[Fix]` | Bug fix |
-| `[Minor]` | Small/trivial change (whitespace, nil check, typo) |
-| `[Rework]` | Major refactoring |
-| `[Conf]` | Configuration change |
-| `[Test]` | Test-only change |
-| `[Docs]` | Documentation only |
-| `[Project]` | Build system, CI, packaging |
+| Type | When to use |
+| --- | --- |
+| `feat` | New functionality |
+| `fix` | Bug fix |
+| `docs` | Documentation only |
+| `refactor` | Restructuring without behavior change |
+| `test` | Test-only change |
+| `perf` | Performance improvement |
+| `build` | Build system, dependencies, `pyproject.toml` |
+| `ci` | CI configuration |
+| `chore` | Other maintenance |
+
+Scopes: `api`, `backends`, `cache`, `config`, `latency`, `metrics`,
+`prefilter`, `rewrite`. Breaking changes: `!` after the scope and/or a
+`BREAKING CHANGE:` footer. Description is imperative, lowercase, no trailing
+period, first line ≤ 72 chars. Independent changes go in separate commits —
+don't mix a backend change with an API change.
 
 **ALL commits and tags must be GPG-signed:**
 ```bash
-git commit -S -m "[Tag] Description"
+git commit -S -m "feat(api): add msgpack response encoding"
 git tag -s X.Y.Z -m "Tag message"
 ```
 

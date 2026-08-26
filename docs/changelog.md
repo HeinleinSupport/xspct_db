@@ -1,5 +1,36 @@
 # Changelog
 
+> **Commit convention:** starting with the release after `0.7.5`, commits follow
+> [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
+> Everything up to and including `0.7.5` uses the older `[Tag] Description`
+> form and has not been rewritten retroactively. See `CONTRIBUTING.md`.
+
+## Unreleased
+
+### Performance
+- Batch endpoints resolve every address in two pipelined Redis round-trips on a
+  single connection instead of a pair of round-trips per address; a
+  500-recipient batch drops from ~1000 round-trips to 2
+- Redis now uses a `BlockingConnectionPool` so a burst waits for a free
+  connection instead of erroring and tripping the cache circuit breaker
+- Wildcard key derivations are compiled once at startup, the MySQL query split
+  and placeholder regexes are memoised per query config, and backend dispatch
+  keeps a lazy module table
+- Per-request `INFO` logging demoted to `DEBUG` across the wildcard paths and
+  the LDAP/MySQL backends; the MySQL line also carried queried mail addresses
+
+### Features
+- Per-span latency tracing (`xspct_db_latency`): rolling median/p90/p99 per
+  span, automatic anomaly warnings, and a slow-request log line carrying the
+  full per-span breakdown
+- Latency percentiles and an `xspct_db_span_duration_seconds` histogram are
+  exported to Prometheus, alongside new
+  `xspct_db_{foreground,background}_in_flight` gauges
+
+### Fixes
+- `dependency-review` CI used nine invalid SPDX identifiers, so its copyleft
+  deny list was never in effect
+
 ## 0.7.5 (2026-07-14)
 
 ### Features

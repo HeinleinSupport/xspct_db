@@ -44,7 +44,7 @@ git diff --cached --stat
 ### 4. Commit
 
 ```bash
-git commit -S -m "[Docs] Update dependency SBOM"
+git commit -S -m "chore: update dependency SBOM"
 ```
 
 Remind the user to verify their GPG key is available (`gpg --list-secret-keys`) before committing.
