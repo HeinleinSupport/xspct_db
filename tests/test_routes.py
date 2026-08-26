@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+from typing import Any
 
 import pytest
 
@@ -932,3 +934,165 @@ async def test_wildcard_rspamd_supports_multiple_query_key_strategies(wildcard_m
     data = json.loads(await resp.text())
     # settings_data.users is keyed by primary key (@mailexample.de for the wildcard entry).
     assert data["settings_data"]["users"]["@mailexample.de"]["uid"] == ["wildcard"]
+
+
+# ---------------------------------------------------------------------------
+# Batched cache probing
+# ---------------------------------------------------------------------------
+
+
+class _RecordingPipe:
+    """Minimal async Redis pipeline that records the commands it batches."""
+
+    def __init__(self, conn: "_RecordingConn") -> None:
+        self._conn = conn
+        self._keys: list[str] = []
+
+    async def __aenter__(self) -> "_RecordingPipe":
+        self._conn.in_use += 1
+        self._conn.peak = max(self._conn.peak, self._conn.in_use)
+        return self
+
+    async def __aexit__(self, *exc: object) -> bool:
+        self._conn.in_use -= 1
+        return False
+
+    def get(self, key: str) -> None:
+        self._keys.append(key)
+
+    async def execute(self) -> list[str | None]:
+        await asyncio.sleep(0)
+        self._conn.round_trips += 1
+        self._conn.batch_sizes.append(len(self._keys))
+        return [self._conn.data.get(k) for k in self._keys]
+
+
+class _RecordingConn:
+    def __init__(self, data: dict[str, str] | None = None) -> None:
+        self.data = data or {}
+        self.round_trips = 0
+        self.batch_sizes: list[int] = []
+        self.in_use = 0
+        self.peak = 0
+
+    def pipeline(self, transaction: bool = False) -> _RecordingPipe:
+        return _RecordingPipe(self)
+
+
+def _redis_only_cfg(**redis_overrides: Any) -> dict[str, Any]:
+    return {
+        "xspct_db_redis_cache": {
+            "enabled": True,
+            "prefix_user": "u_",
+            "prefix_alias": "a_",
+            "prefix_negative_alias": "n_",
+            "expire": 60,
+            "expire_negative": 60,
+            "max_errors": 2,
+            **redis_overrides,
+        },
+        "xspct_db_local_cache": {"enabled": False},
+    }
+
+
+async def _with_conn(conn: Any, coro_factory):
+    """Run *coro_factory* with cache.connection swapped for *conn*."""
+    previous, prev_errors = xcache.connection, xcache.error_count
+    xcache.set_connection(conn)
+    xcache.error_count = 0
+    xcache.errors = []
+    try:
+        return await coro_factory()
+    finally:
+        xcache.set_connection(previous)
+        xcache.error_count = prev_errors
+        xcache.errors = []
+
+
+async def test_batch_lookup_costs_two_round_trips_regardless_of_size():
+    """A 200-address batch must not cost a round-trip (or a connection) per address.
+
+    The alias -> object indirection is two *dependent* reads per batch, not per
+    key, so the whole batch pipelines into two round-trips on one connection.
+    """
+    from xspct_db import routes
+
+    conn = _RecordingConn({f"a_user{i}@mailexample.de": f"user{i}@mailexample.de" for i in range(200)})
+    conn.data.update({f"u_user{i}@mailexample.de": json.dumps({"mail": f"user{i}@mailexample.de"}) for i in range(200)})
+    addresses = [f"user{i}@mailexample.de" for i in range(200)]
+
+    results = await _with_conn(conn, lambda: routes._probe_cached_addresses("<test>", addresses, _redis_only_cfg(), []))
+
+    assert conn.round_trips == 2
+    # Round 1 asks for alias+negative per address, round 2 for the 200 objects.
+    assert conn.batch_sizes == [400, 200]
+    assert conn.peak == 1
+    assert [pkey for pkey, _obj in results] == addresses
+
+
+async def test_batch_lookup_skips_the_second_round_when_nothing_resolves():
+    """All-miss batches cost a single round-trip."""
+    from xspct_db import routes
+
+    conn = _RecordingConn()
+    addresses = [f"user{i}@mailexample.de" for i in range(50)]
+
+    results = await _with_conn(conn, lambda: routes._probe_cached_addresses("<test>", addresses, _redis_only_cfg(), []))
+
+    assert conn.round_trips == 1
+    assert all(r == (None, None) for r in results)
+
+
+async def test_batch_lookup_preserves_input_order():
+    """Results line up with the input even when only some addresses resolve."""
+    from xspct_db import routes
+
+    addresses = [f"user{i}@mailexample.de" for i in range(10)]
+    # Only the odd-numbered addresses are cached.
+    conn = _RecordingConn()
+    for i in range(1, 10, 2):
+        conn.data[f"a_user{i}@mailexample.de"] = f"user{i}@mailexample.de"
+        conn.data[f"u_user{i}@mailexample.de"] = json.dumps({"mail": f"user{i}@mailexample.de", "n": i})
+
+    results = await _with_conn(conn, lambda: routes._probe_cached_addresses("<test>", addresses, _redis_only_cfg(), []))
+
+    for i, (pkey, obj) in enumerate(results):
+        if i % 2:
+            assert pkey == addresses[i]
+            assert obj["n"] == [i] or obj["n"] == i
+        else:
+            assert (pkey, obj) == (None, None)
+
+
+async def test_batch_lookup_resolves_negative_markers():
+    """A negative marker is returned from round one without a second round."""
+    from xspct_db import routes
+
+    conn = _RecordingConn({"n_ghost@mailexample.de": "1"})
+    results = await _with_conn(conn, lambda: routes._probe_cache_keys("<test>", ["ghost@mailexample.de"], _redis_only_cfg()))
+
+    assert conn.round_trips == 1
+    assert results[0][0] is False
+    assert results[0][1] == "redis-negative"
+
+
+async def test_batch_wildcard_probe_deduplicates_domain_keys():
+    """100 recipients across 2 domains cost 2 wildcard keys, not 100."""
+    from xspct_db import routes
+
+    rules = routes.compile_wildcard_rules({"xspct_db_queries": {"w": {"db_type": "yaml", "wildcard_domain_query": True}}})
+    conn = _RecordingConn(
+        {
+            "a_@a.mailexample.de": "@a.mailexample.de",
+            "u_@a.mailexample.de": json.dumps({"mail": "@a.mailexample.de"}),
+        }
+    )
+    addresses = [f"user{i}@{'a' if i % 2 else 'b'}.mailexample.de" for i in range(100)]
+
+    results = await _with_conn(conn, lambda: routes._probe_cached_addresses("<test>", addresses, _redis_only_cfg(), rules))
+
+    # Round 1+2 for the addresses, then round 3(+4) for the two domain keys.
+    assert conn.round_trips <= 4
+    # The wildcard round asked for exactly the two distinct domain keys.
+    assert conn.batch_sizes[-2] == 4  # alias+negative for @a. and @b.
+    assert sum(1 for pkey, _ in results if pkey == "@a.mailexample.de") == 50

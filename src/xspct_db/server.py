@@ -17,7 +17,7 @@ from aiohttp_pydantic import oas
 from xspct_db import __version__, cache
 from xspct_db import config as cfg_mod
 from xspct_db.metrics import setup_metrics
-from xspct_db.routes import setup_routes
+from xspct_db.routes import compile_wildcard_rules, setup_routes
 
 try:
     import uvloop
@@ -34,7 +34,14 @@ async def _on_startup(app: web.Application) -> None:
         try:
             import redis.asyncio as redis
 
-            pool = redis.ConnectionPool(
+            # BlockingConnectionPool (not the plain ConnectionPool): when every
+            # connection is busy the plain pool raises MaxConnectionsError
+            # immediately, and each such error counts towards the cache circuit
+            # breaker — a burst of concurrent lookups could trip it and push
+            # traffic past the cache to the backends.  The blocking pool makes
+            # callers wait up to pool_timeout for a free connection instead.
+            pool_timeout = float(cfg["xspct_db_redis_cache"].get("pool_timeout", 2))
+            pool = redis.BlockingConnectionPool(
                 host=cfg["xspct_db_redis_cache"]["host"],
                 port=cfg["xspct_db_redis_cache"]["port"],
                 username=cfg["xspct_db_redis_cache"]["user"],
@@ -43,9 +50,14 @@ async def _on_startup(app: web.Application) -> None:
                 socket_timeout=cfg["xspct_db_redis_cache"]["query_timeout"],
                 socket_connect_timeout=cfg["xspct_db_redis_cache"]["connect_timeout"],
                 max_connections=int(cfg["xspct_db_redis_cache"]["max_connections"]),
+                timeout=pool_timeout,
             )
             cache.set_connection(redis.Redis(connection_pool=pool))
-            logger.info("Redis connection pool created")
+            logger.info(
+                "Redis connection pool created (max_connections=%d pool_timeout=%.1fs)",
+                int(cfg["xspct_db_redis_cache"]["max_connections"]),
+                pool_timeout,
+            )
         except Exception as exc:
             logger.error("Error creating Redis connection pool: %s", exc)
 
@@ -62,6 +74,9 @@ async def _on_startup(app: web.Application) -> None:
     from xspct_db import prefilter, rewrite
 
     app["rewrite_rules"] = rewrite.compile_rules(cfg.get("xspct_db_rewrite_rules"))
+    # Wildcard key derivations are static config — compile them once here so
+    # the request path never touches re.compile().
+    app["wildcard_rules"] = compile_wildcard_rules(cfg)
 
     await prefilter.start(app, cfg)
 

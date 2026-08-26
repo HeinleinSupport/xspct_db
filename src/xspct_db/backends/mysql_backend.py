@@ -64,6 +64,38 @@ async def close_pools() -> None:
     _pools.clear()
 
 
+# Cache key used to memoise the parsed query on the query_config dict itself.
+_PARSED_KEY = "_xspct_parsed_sql"
+
+
+def _parsed_query(query_config: dict[str, Any]) -> tuple[str, str | None, dict[str, Any]]:
+    """Return the memoised ``(select_part, where_template, placeholder_regexes)``.
+
+    Splitting the configured SQL at ``WHERE`` and compiling the per-placeholder
+    quoting regex only depends on static configuration, so both are computed
+    once per query config instead of once per request.
+    """
+    parsed = query_config.get(_PARSED_KEY)
+    if parsed is not None:
+        return parsed
+
+    sql = query_config["query"]
+    where_match = re.search(r"\bWHERE\b", sql, re.IGNORECASE)
+    select_part = sql[: where_match.start()].rstrip() if where_match else sql
+    where_tmpl: str | None = sql[where_match.end() :].strip() if where_match else None
+
+    placeholder_res: dict[str, Any] = {}
+    replace_cfg = query_config.get("query_replace")
+    if isinstance(replace_cfg, dict):
+        for ph in replace_cfg:
+            # Match optional SQL quoting: ["'](prefix)placeholder(suffix)["']
+            placeholder_res[ph] = re.compile(r'(["\'])(.*?)' + re.escape(ph) + r"(.*?)\1")
+
+    parsed = (select_part, where_tmpl, placeholder_res)
+    query_config[_PARSED_KEY] = parsed
+    return parsed
+
+
 def _build_sql_fragment(
     s: str,
     template: str,
@@ -80,13 +112,13 @@ def _build_sql_fragment(
     if not isinstance(query_config.get("query_replace"), dict):
         return sql, params
 
+    placeholder_res = _parsed_query(query_config)[2]
     active = {ph: field for ph, field in query_config["query_replace"].items() if field in u and ph in sql}
     for placeholder in sorted(active, key=lambda ph: sql.index(ph)):
         field = active[placeholder]
         vals = split_values_into_list(s, u[field], cfg=cfg)
         val = vals[0]
-        # Match optional SQL quoting: ["'](prefix)placeholder(suffix)["']
-        pat = re.compile(r'(["\'])(.*?)' + re.escape(placeholder) + r"(.*?)\1")
+        pat = placeholder_res[placeholder]
         new_params: list[str] = []
 
         def _replacer(m: re.Match, _val: str = val, _np: list = new_params) -> str:
@@ -139,10 +171,9 @@ async def query(
     logger.debug("%s (%s) - (%s) - query users: %s", s, timer(), query_name, users)
 
     # Split SQL at WHERE so each user's WHERE fragment can be built separately
-    # and all fragments combined with OR into a single batched query.
-    _where_match = re.search(r"\bWHERE\b", query_config["query"], re.IGNORECASE)
-    select_part = query_config["query"][: _where_match.start()].rstrip() if _where_match else query_config["query"]
-    where_tmpl: str | None = query_config["query"][_where_match.end() :].strip() if _where_match else None
+    # and all fragments combined with OR into a single batched query.  The split
+    # is memoised per query config — it never varies between requests.
+    select_part, where_tmpl, _ = _parsed_query(query_config)
 
     # Phase 1: resolve each user (use_result + u-dict rebuild) and build
     # the per-user WHERE fragment with positional %s params.
@@ -214,7 +245,9 @@ async def query(
         combined_sql = select_part
         combined_params = []
 
-    logger.info("%s (%s) - (%s) - searching for: %s\n params: %s", s, timer(), query_name, combined_sql, combined_params)
+    # Logged at DEBUG: the parameters carry the queried mail addresses, which
+    # should not land in a production log at INFO level.
+    logger.debug("%s (%s) - (%s) - searching for: %s\n params: %s", s, timer(), query_name, combined_sql, combined_params)
 
     # Phase 3: execute the combined query once.
     try:
@@ -224,7 +257,7 @@ async def query(
                 async with conn.cursor(aiomysql.DictCursor) as cur:
                     await cur.execute(combined_sql, combined_params)
                     search = await cur.fetchall()
-                    logger.info("%s (%s) - (%s) - cursor descr: %s", s, timer(), query_name, cur.description)
+                    logger.debug("%s (%s) - (%s) - cursor descr: %s", s, timer(), query_name, cur.description)
                     logger.debug("%s (%s) - (%s) - mysql raw results: %s", s, timer(), query_name, search)
             except aiomysql.Error as exc:
                 logger.exception("%s (%s) - (%s) - aiomysql.Error: %s", s, timer(), query_name, exc)
@@ -232,7 +265,7 @@ async def query(
 
             elapsed = timeit.default_timer() - t0
             stats.update_query_stats(query_name, elapsed)
-            logger.info("%s (%s) - (%s) - mysql query took %.5fs", s, timer(), query_name, elapsed)
+            logger.debug("%s (%s) - (%s) - mysql query took %.5fs", s, timer(), query_name, elapsed)
 
     except Exception as exc:
         logger.exception("%s (%s) - (%s) - pool error: %s", s, timer(), query_name, exc)

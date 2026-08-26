@@ -252,9 +252,17 @@ async def get_object_with_source(
 
     redis_cfg = cfg["xspct_db_redis_cache"]
     key_alias = redis_cfg["prefix_alias"] + user
+    key_neg = redis_cfg["prefix_negative_alias"] + user
 
+    # Fetch the alias and the negative marker in a single round-trip.  The
+    # positive path still needs a second GET for the user object, but the
+    # miss/negative path — by far the most common one on a mail gateway —
+    # now costs one RTT instead of two.
     try:
-        alias = await connection.get(key_alias)
+        async with connection.pipeline(transaction=False) as pipe:
+            pipe.get(key_alias)
+            pipe.get(key_neg)
+            alias, neg = await pipe.execute()
     except Exception as exc:
         logger.error("%s - error getting redis alias %s: %s", s, key_alias, exc)
         record_error(str(exc), cfg)
@@ -291,13 +299,6 @@ async def get_object_with_source(
                 )
             return user_obj, "redis", alias
     else:
-        key_neg = redis_cfg["prefix_negative_alias"] + user
-        try:
-            neg = await connection.get(key_neg)
-        except Exception as exc:
-            logger.error("%s - error getting redis neg alias %s: %s", s, key_neg, exc)
-            record_error(str(exc), cfg)
-            return None, "miss", None
         if isinstance(neg, str):
             # Backfill L1 negative.
             if _ensure_l1(cfg):
@@ -316,6 +317,125 @@ async def get_object_with_source(
             return False, "redis-negative", None
 
     return None, "miss", None
+
+
+def _l1_lookup(s: str, user: str, cfg: dict[str, Any]) -> tuple[dict[str, Any] | bool, str, str | None] | None:
+    """Return an L1 result for *user*, or ``None`` when L1 cannot answer.
+
+    Split out of :func:`get_object_with_source` so the batch variant can run
+    the same L1 pass without duplicating the alias/negative logic.
+    """
+    if not _ensure_l1(cfg):
+        return None
+
+    canonical = _local_aliases.get(user)  # type: ignore[union-attr]
+    if canonical is not None:
+        user_obj = _local_users.get(canonical)  # type: ignore[union-attr]
+        if user_obj is not None:
+            return user_obj, "local", canonical
+
+    if user in _local_negative:  # type: ignore[operator]
+        return False, "local", None
+
+    return None
+
+
+async def get_objects_with_source(
+    s: str, users: list[str], cfg: dict[str, Any]
+) -> list[tuple[dict[str, Any] | bool | None, str, str | None]]:
+    """Look several keys up at once, returning results in input order.
+
+    The alias → user-object indirection makes a single lookup two *dependent*
+    Redis reads, but that dependency is per-batch, not per-key: every address
+    can be resolved in **two pipelined round-trips on one connection**, however
+    many addresses there are.
+
+    1. one pipeline issuing ``GET alias`` + ``GET negative`` for every key that
+       L1 could not answer;
+    2. one pipeline issuing ``GET user`` for those that resolved to an alias.
+
+    That is why this is not a fan-out: N concurrent single-key lookups would
+    need N connections and N round-trips to do strictly less.
+    """
+    results: list[tuple[dict[str, Any] | bool | None, str, str | None]] = [(None, "miss", None)] * len(users)
+
+    # --- L1 pass (no I/O) ---
+    pending: list[int] = []
+    for i, user in enumerate(users):
+        hit = _l1_lookup(s, user, cfg)
+        if hit is not None:
+            results[i] = hit
+        else:
+            pending.append(i)
+
+    if not pending or connection is None or not is_enabled(cfg):
+        return results
+
+    redis_cfg = cfg["xspct_db_redis_cache"]
+    prefix_alias = redis_cfg["prefix_alias"]
+    prefix_negative = redis_cfg["prefix_negative_alias"]
+
+    # --- Round 1: alias + negative marker for every L1 miss ---
+    try:
+        async with connection.pipeline(transaction=False) as pipe:
+            for i in pending:
+                pipe.get(prefix_alias + users[i])
+                pipe.get(prefix_negative + users[i])
+            raw = await pipe.execute()
+    except Exception as exc:
+        logger.error("%s - error in batch alias lookup (%d keys): %s", s, len(pending), exc)
+        record_error(str(exc), cfg)
+        return results
+
+    reset_errors()
+
+    resolved: list[tuple[int, str]] = []  # (index into users, alias)
+    for pos, i in enumerate(pending):
+        alias = raw[pos * 2]
+        neg = raw[pos * 2 + 1]
+        if isinstance(alias, str):
+            resolved.append((i, alias))
+        elif isinstance(neg, str):
+            if _ensure_l1(cfg):
+                _local_negative[users[i]] = True  # type: ignore[index]
+            results[i] = (False, "redis-negative", None)
+
+    if not resolved:
+        return results
+
+    # --- Round 2: the user objects the aliases point at ---
+    prefix_user = redis_cfg["prefix_user"]
+    try:
+        async with connection.pipeline(transaction=False) as pipe:
+            for _i, alias in resolved:
+                pipe.get(prefix_user + alias)
+            raw_objs = await pipe.execute()
+    except Exception as exc:
+        logger.error("%s - error in batch object lookup (%d keys): %s", s, len(resolved), exc)
+        record_error(str(exc), cfg)
+        return results
+
+    reset_errors()
+
+    for (i, alias), raw_obj in zip(resolved, raw_objs):
+        if not isinstance(raw_obj, str):
+            continue
+        user_obj = json.loads(raw_obj)
+        if _ensure_l1(cfg):
+            _local_aliases[users[i]] = alias  # type: ignore[index]
+            _local_users[alias] = user_obj  # type: ignore[index]
+        results[i] = (user_obj, "redis", alias)
+
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(
+            "%s - batch cache lookup: %d keys, %d L1 hits, %d redis round-trips",
+            s,
+            len(users),
+            len(users) - len(pending),
+            2 if resolved else 1,
+        )
+
+    return results
 
 
 async def set_cache(

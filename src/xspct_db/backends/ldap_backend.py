@@ -178,7 +178,7 @@ async def query(
     else:
         combined_filter = "(|" + "".join(uf["ldap_filter"] for uf in user_frags) + ")"
 
-    logger.info(
+    logger.debug(
         "%s (%s) - (%s) - searching for: %s base_dn=%s",
         s,
         timer(),
@@ -207,7 +207,7 @@ async def query(
 
             elapsed = timeit.default_timer() - t0
             stats.update_query_stats(query_name, elapsed)
-            logger.info("%s (%s) - (%s) - ldap query took %.5fs, results: %d", s, timer(), query_name, elapsed, len(search))
+            logger.debug("%s (%s) - (%s) - ldap query took %.5fs, results: %d", s, timer(), query_name, elapsed, len(search))
             logger.debug("%s (%s) - (%s) - ldap raw results: %s", s, timer(), query_name, search)
 
             # Phase 4: attribute result rows to input users and merge into userdata.

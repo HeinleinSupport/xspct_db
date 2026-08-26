@@ -131,8 +131,31 @@ xspct_db_redis_cache:
   connect_timeout: 1
   query_timeout: 1
   max_connections: 40
+  pool_timeout: 2      # seconds to wait for a free pooled connection
   max_errors: 2        # disable cache after this many consecutive errors
 ```
+
+The connection pool is a `BlockingConnectionPool`: when every connection is
+busy, a lookup waits up to `pool_timeout` seconds for one to free up.  The
+plain pool would instead raise immediately, and each such error counts towards
+`max_errors` — a burst of concurrent lookups could trip the circuit breaker and
+push traffic past the cache to the backends.
+
+### Batched lookups
+
+Resolving one address takes two *dependent* Redis reads: `GET` the alias, then
+`GET` the object it points at.  That dependency is **per batch, not per key**,
+so batch endpoints (`/v1/query-json`, `/v1/rspamd-settings`) resolve every
+address in two pipelined round-trips on a single connection:
+
+1. one pipeline issuing `GET alias` + `GET negative` for every address L1 could
+   not answer;
+2. one pipeline issuing `GET user` for those that resolved to an alias.
+
+A 500-recipient batch therefore costs 2 round-trips and 1 connection, not 1000
+round-trips (sequential) or 500 connections (unbounded fan-out).  Wildcard
+domain keys are deduplicated and probed the same way, adding at most two more
+round-trips no matter how many recipients share a domain.
 
 ## Prefilter
 

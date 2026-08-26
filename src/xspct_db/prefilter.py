@@ -50,6 +50,8 @@ import re
 import time
 from typing import TYPE_CHECKING, Any
 
+from xspct_db import stats as _stats
+
 if TYPE_CHECKING:
     from aiohttp import web
 
@@ -187,8 +189,6 @@ def _validate_and_apply(new_set: frozenset[str], cfg: dict[str, Any]) -> None:
     _domain_set_loaded_at = time.monotonic()
     _domain_set_expired_logged = False
     logger.info("prefilter: domain set updated with %d entries", len(new_set))
-    from xspct_db import stats as _stats
-
     _stats.stats["prefilter_domain_count"] = len(new_set)
 
 
@@ -256,8 +256,6 @@ def filter_user(s: str, user: str, app: "web.Application") -> bool:
     if not cfg.get("xspct_db_prefilter", {}).get("enabled", False):
         return True
 
-    from xspct_db import stats as _stats
-
     pcfg = cfg.get("xspct_db_prefilter_patterns", {})
     if pcfg.get("enabled", False) and _patterns:
         if not any(p.search(user) for p in _patterns):
@@ -288,8 +286,6 @@ def filter_addresses(s: str, addresses: list[str], app: "web.Application") -> li
         return addresses
 
     result = list(addresses)
-
-    from xspct_db import stats as _stats
 
     pcfg = cfg.get("xspct_db_prefilter_patterns", {})
     if pcfg.get("enabled", False) and _patterns:

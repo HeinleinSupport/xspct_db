@@ -73,6 +73,8 @@ DEFAULTS: dict[str, Any] = {
         "connect_timeout": 1,
         "query_timeout": 1,
         "max_connections": 40,
+        # Seconds a lookup waits for a free pooled connection before erroring.
+        "pool_timeout": 2,
         "max_errors": 2,
     },
     "xspct_db_yaml_data": {},

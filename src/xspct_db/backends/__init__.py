@@ -15,6 +15,40 @@ from xspct_db.backends.base import merge_userdata
 
 logger = logging.getLogger(__name__)
 
+# db_type → dotted module path of the backend implementing it.
+_BACKEND_MODULES: dict[str, str] = {
+    "dummy": "xspct_db.backends.dummy",
+    "yaml": "xspct_db.backends.yaml_backend",
+    "ldap": "xspct_db.backends.ldap_backend",
+    "mysql": "xspct_db.backends.mysql_backend",
+    "delay": "xspct_db.backends.delay",
+    "error": "xspct_db.backends.dummy",
+}
+
+# Lazily-populated cache of imported backend modules, so the request path does
+# not re-enter the import machinery on every query while optional dependencies
+# stay optional (a module is only imported when a query of that type runs).
+# Modules — not the query functions themselves — are cached, so that replacing
+# a backend's ``query`` attribute at runtime still takes effect.
+_MODULES: dict[str, Any] = {}
+
+
+def _resolve_backend(db_type: str) -> Any | None:
+    """Return the backend module for *db_type*, importing it on first use."""
+    mod = _MODULES.get(db_type)
+    if mod is not None:
+        return mod
+
+    path = _BACKEND_MODULES.get(db_type)
+    if path is None:
+        return None
+
+    from importlib import import_module
+
+    mod = import_module(path)
+    _MODULES[db_type] = mod
+    return mod
+
 
 async def _execute_query(
     s: str,
@@ -26,42 +60,21 @@ async def _execute_query(
     cfg: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any], str | bool]:
     """Execute a single configured query and return its updated state."""
-    db_type = qv.get("db_type")
+    db_type = qv.get("db_type", "")
     query_error: str | bool = False
     t0 = timeit.default_timer()
 
-    if db_type == "dummy":
-        from xspct_db.backends.dummy import query as dummy_query
-
-        userdata = dummy_query(s, qk, users, cfg)
-
-    elif db_type == "yaml":
-        from xspct_db.backends.yaml_backend import query as yaml_query
-
-        userdata, user_to_pkey, query_error = await yaml_query(s, qk, users, userdata, user_to_pkey, cfg)
-
-    elif db_type == "ldap":
-        from xspct_db.backends.ldap_backend import query as ldap_query
-
-        userdata, user_to_pkey, query_error = await ldap_query(s, qk, users, userdata, user_to_pkey, cfg)
-
-    elif db_type == "mysql":
-        from xspct_db.backends.mysql_backend import query as mysql_query
-
-        userdata, user_to_pkey, query_error = await mysql_query(s, qk, users, userdata, user_to_pkey, cfg)
-
-    elif db_type == "delay":
-        from xspct_db.backends.delay import query as delay_query
-
-        userdata, user_to_pkey, query_error = await delay_query(s, qk, users, userdata, user_to_pkey, cfg)
-
-    elif db_type == "error":
-        from xspct_db.backends.dummy import error_query
-
-        query_error = error_query(s, qk, cfg)
+    mod = _resolve_backend(db_type)
+    if mod is not None:
+        if db_type == "dummy":
+            userdata = mod.query(s, qk, users, cfg)
+        elif db_type == "error":
+            query_error = mod.error_query(s, qk, cfg)
+        else:
+            userdata, user_to_pkey, query_error = await mod.query(s, qk, users, userdata, user_to_pkey, cfg)
 
     elapsed = timeit.default_timer() - t0
-    logger.info("%s - query[%s] took %.5fs", s, qk, elapsed)
+    logger.debug("%s - query[%s] took %.5fs", s, qk, elapsed)
     if db_type not in ("ldap", "mysql"):
         stats.update_query_stats(qk, elapsed)
 
