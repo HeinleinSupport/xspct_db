@@ -7,6 +7,8 @@
 
 ## Unreleased
 
+## 0.8.0 (2026-08-26)
+
 ### Performance
 - Batch endpoints resolve every address in two pipelined Redis round-trips on a
   single connection instead of a pair of round-trips per address; a
