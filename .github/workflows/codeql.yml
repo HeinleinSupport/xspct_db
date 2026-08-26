@@ -36,7 +36,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install system dependencies
-        run: sudo apt-get install -y --no-install-recommends libldap2-dev libsasl2-dev
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libldap2-dev libsasl2-dev
 
       # Installing the package lets CodeQL trace imports and resolve the full
       # call graph across all backends.

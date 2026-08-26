@@ -20,7 +20,9 @@ jobs:
           python-version: "3.12"
 
       - name: Install lint tools
-        run: pip install ruff reuse
+        # Pinned: ruff's default rule set expands between releases, which
+        # would otherwise fail CI without any code change.
+        run: pip install "ruff==0.16.4" reuse
 
       - name: ruff — lint
         run: ruff check src/ tests/
@@ -48,7 +50,10 @@ jobs:
 
       # bonsai (LDAP backend) requires libldap / libsasl2 headers at build time
       - name: Install system dependencies
-        run: sudo apt-get install -y --no-install-recommends libldap2-dev libsasl2-dev
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libldap2-dev libsasl2-dev
 
       - name: Install project with all extras
         run: pip install -e ".[all,dev]"
@@ -74,7 +79,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install system dependencies
-        run: sudo apt-get install -y --no-install-recommends libldap2-dev libsasl2-dev
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libldap2-dev libsasl2-dev
 
       - name: Install project with all extras
         run: pip install -e ".[all,dev]" pip-audit
