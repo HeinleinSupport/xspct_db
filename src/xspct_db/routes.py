@@ -17,7 +17,7 @@ from aiohttp_pydantic import PydanticView
 from aiohttp_pydantic.oas.typing import r200, r401, r500, r504
 from pydantic import ValidationError
 
-from xspct_db import cache, prefilter, rewrite, stats
+from xspct_db import cache, latency, prefilter, rewrite, stats
 from xspct_db.auth import verify_api_key
 from xspct_db.schemas import (
     ErrorResponse,
@@ -132,14 +132,15 @@ def _serialize_body(data: Any, fmt: str) -> tuple[bytes, str]:
     Raises :class:`aiohttp.web.HTTPNotAcceptable` (406) when *fmt* is
     ``"msgpack"`` but :mod:`msgpack` is not installed.
     """
-    if fmt == "msgpack":
-        try:
-            if _msgpack is None:
-                raise web.HTTPNotAcceptable(text="msgpack library not installed")
-            return _msgpack.packb(data, use_bin_type=True), "application/msgpack"
-        except web.HTTPNotAcceptable:
-            raise
-    return json.dumps(data).encode(), "application/json"
+    with latency.span("serialize"):
+        if fmt == "msgpack":
+            try:
+                if _msgpack is None:
+                    raise web.HTTPNotAcceptable(text="msgpack library not installed")
+                return _msgpack.packb(data, use_bin_type=True), "application/msgpack"
+            except web.HTTPNotAcceptable:
+                raise
+        return json.dumps(data).encode(), "application/json"
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +241,7 @@ async def _finalize_background(
         stats.stats["background_errors"] += 1
         logger.exception("%s background task raised: %s", s, exc)
     finally:
+        stats.stats["background_in_flight"] -= 1
         bg_sem.release()
         bg_tasks.discard(asyncio.current_task())
 
@@ -268,14 +270,18 @@ async def _run_with_queues(
     bg_sem: asyncio.Semaphore = app["bg_sem"]
     bg_tasks: set[asyncio.Task] = app["bg_tasks"]
 
-    # Acquire a foreground slot (blocking up to *timeout*).
+    # Acquire a foreground slot (blocking up to *timeout*).  The wait time is
+    # the clearest early-warning signal that the service is saturated: it stays
+    # near zero until the fg slots run out, then climbs before any 503 appears.
     try:
-        await asyncio.wait_for(fg_sem.acquire(), timeout=timeout)
+        async with latency.span("queue.fg_wait"):
+            await asyncio.wait_for(fg_sem.acquire(), timeout=timeout)
     except asyncio.TimeoutError:
         stats.stats["foreground_overloaded"] += 1
         coro.close()
         raise _ServiceOverloaded
 
+    stats.stats["foreground_in_flight"] += 1
     task = asyncio.create_task(coro)
     try:
         result = await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
@@ -290,10 +296,12 @@ async def _run_with_queues(
             stats.stats["background_rejected"] += 1
             return None, True
         # Hand task to background finalizer.
+        stats.stats["background_in_flight"] += 1
         bg_task = asyncio.create_task(_finalize_background(s, task, bg_sem, bg_tasks))
         bg_tasks.add(bg_task)
         return None, True
     finally:
+        stats.stats["foreground_in_flight"] -= 1
         fg_sem.release()
 
 
@@ -728,6 +736,7 @@ class QueryView(PydanticView):
         cfg: dict[str, Any] = self.request.app["config"]
         s_id = generate_session_id()
         s = add_rspamd_id(s_id, self.request.headers.get(cfg["xspct_db_rspamd_header"]))
+        latency.set_tag(s)
 
         _log_request(s, self.request)
 
@@ -743,7 +752,9 @@ class QueryView(PydanticView):
         rewrite_rules = self.request.app.get("rewrite_rules", [])
         query_user = rewrite.apply_rewrite_rules(user, rewrite_rules)
 
-        if not prefilter.filter_user(s, query_user, self.request.app):
+        with latency.span("prefilter"):
+            passed = prefilter.filter_user(s, query_user, self.request.app)
+        if not passed:
             stats.stats["requests_unknown"] += 1
             _body, _ctype = _serialize_body({"users": {}}, fmt)
             return _log_response(
@@ -1039,6 +1050,7 @@ class QueryJsonView(PydanticView):
         cfg: dict[str, Any] = self.request.app["config"]
         s_id = generate_session_id()
         s = add_rspamd_id(s_id, self.request.headers.get(cfg["xspct_db_rspamd_header"]))
+        latency.set_tag(s)
 
         raw_body = await self.request.read()
         parsed_body: Any = _parse_body(raw_body, self.request.headers.get("Content-Type", ""))
@@ -1066,7 +1078,8 @@ class QueryJsonView(PydanticView):
         rewrite_map: dict[str, str] = {u: rewrite.apply_rewrite_rules(u, rewrite_rules) for u in query_req.users}
         # Deduplicated canonical addresses passed through prefilter.
         canonical_users = list(dict.fromkeys(rewrite_map.values()))
-        filtered_canonical = prefilter.filter_addresses(s, canonical_users, self.request.app)
+        with latency.span("prefilter"):
+            filtered_canonical = prefilter.filter_addresses(s, canonical_users, self.request.app)
         # Keep only originals whose canonical form survived the prefilter.
         filtered_set = set(filtered_canonical)
         filtered_users = [u for u in rewrite_map if rewrite_map[u] in filtered_set]
@@ -1127,7 +1140,8 @@ class QueryJsonView(PydanticView):
 
             # Per-address L1/L2 cache lookup — query the backend only for misses.
             backend_users = []
-            probed = await _probe_cached_addresses(s, [u["username"] for u in users], cfg, wildcard_rules)
+            async with latency.span("cache.probe"):
+                probed = await _probe_cached_addresses(s, [u["username"] for u in users], cfg, wildcard_rules)
             for u, (effective_pkey, cached_obj) in zip(users, probed):
                 if cached_obj is None:
                     backend_users.append(u)
@@ -1186,7 +1200,8 @@ class QueryJsonView(PydanticView):
                     dom_ud: dict[str, Any] = {"users": {}}
                     dom_u2p: dict[str, Any] = {}
                     backend_dom_users = []
-                    probed_dom = await _probe_cache_keys(s, unique_domain_keys, cfg)
+                    async with latency.span("cache.probe"):
+                        probed_dom = await _probe_cache_keys(s, unique_domain_keys, cfg)
                     for du, (cached_dom, _src, canonical_dk) in zip(dom_users, probed_dom):
                         dk = du["username"]
                         if isinstance(cached_dom, dict):
@@ -1342,6 +1357,7 @@ class RspamdSettingsView(PydanticView):
         # Prefer uid from body, fall back to X-Rspamd-ID header
         rspamd_id = rspamd_req.uid or self.request.headers.get(cfg["xspct_db_rspamd_header"])
         s = add_rspamd_id(s_id, rspamd_id)
+        latency.set_tag(s)
 
         _log_request(s, self.request, body=parsed_body)
 
@@ -1373,7 +1389,8 @@ class RspamdSettingsView(PydanticView):
         rs_rewrite_rules = self.request.app.get("rewrite_rules", [])
         rs_rewrite_map: dict[str, str] = {addr: rewrite.apply_rewrite_rules(addr, rs_rewrite_rules) for addr in raw_addresses}
         canonical_addresses = list(dict.fromkeys(rs_rewrite_map.values()))
-        canonical_addresses = prefilter.filter_addresses(s, canonical_addresses, self.request.app)
+        with latency.span("prefilter"):
+            canonical_addresses = prefilter.filter_addresses(s, canonical_addresses, self.request.app)
         filtered_canonical_set = set(canonical_addresses)
         # Originals whose canonical form passed the prefilter.
         addresses = [a for a in rs_rewrite_map if rs_rewrite_map[a] in filtered_canonical_set]
@@ -1405,7 +1422,8 @@ class RspamdSettingsView(PydanticView):
 
                 # Per-address L1/L2 cache lookup — query the backend only for misses.
                 backend_users = []
-                probed = await _probe_cached_addresses(s, [u["username"] for u in users], cfg, wildcard_rules)
+                async with latency.span("cache.probe"):
+                    probed = await _probe_cached_addresses(s, [u["username"] for u in users], cfg, wildcard_rules)
                 for u, (effective_pkey, cached_obj) in zip(users, probed):
                     if cached_obj is None:
                         backend_users.append(u)
@@ -1452,7 +1470,8 @@ class RspamdSettingsView(PydanticView):
                         dom_ud: dict[str, Any] = {"users": {}}
                         dom_u2p: dict[str, Any] = {}
                         backend_dom_users = []
-                        probed_dom = await _probe_cache_keys(s, unique_domain_keys, cfg)
+                        async with latency.span("cache.probe"):
+                            probed_dom = await _probe_cache_keys(s, unique_domain_keys, cfg)
                         for du, (cached_dom, _src, canonical_dk) in zip(dom_users, probed_dom):
                             dk = du["username"]
                             if isinstance(cached_dom, dict):

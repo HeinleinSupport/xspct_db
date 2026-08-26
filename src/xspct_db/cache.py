@@ -11,6 +11,8 @@ from typing import Any
 
 from cachetools import TTLCache
 
+from xspct_db import latency
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -259,10 +261,11 @@ async def get_object_with_source(
     # miss/negative path — by far the most common one on a mail gateway —
     # now costs one RTT instead of two.
     try:
-        async with connection.pipeline(transaction=False) as pipe:
-            pipe.get(key_alias)
-            pipe.get(key_neg)
-            alias, neg = await pipe.execute()
+        async with latency.span("redis.get_alias"):
+            async with connection.pipeline(transaction=False) as pipe:
+                pipe.get(key_alias)
+                pipe.get(key_neg)
+                alias, neg = await pipe.execute()
     except Exception as exc:
         logger.error("%s - error getting redis alias %s: %s", s, key_alias, exc)
         record_error(str(exc), cfg)
@@ -273,7 +276,8 @@ async def get_object_with_source(
     if isinstance(alias, str):
         key_obj = redis_cfg["prefix_user"] + alias
         try:
-            raw = await connection.get(key_obj)
+            async with latency.span("redis.get_user"):
+                raw = await connection.get(key_obj)
         except Exception as exc:
             logger.error("%s - error getting redis object %s: %s", s, key_obj, exc)
             record_error(str(exc), cfg)
@@ -377,7 +381,7 @@ async def get_objects_with_source(
 
     # --- Round 1: alias + negative marker for every L1 miss ---
     try:
-        async with connection.pipeline(transaction=False) as pipe:
+        async with latency.span("redis.get_alias"), connection.pipeline(transaction=False) as pipe:
             for i in pending:
                 pipe.get(prefix_alias + users[i])
                 pipe.get(prefix_negative + users[i])
@@ -406,7 +410,7 @@ async def get_objects_with_source(
     # --- Round 2: the user objects the aliases point at ---
     prefix_user = redis_cfg["prefix_user"]
     try:
-        async with connection.pipeline(transaction=False) as pipe:
+        async with latency.span("redis.get_user"), connection.pipeline(transaction=False) as pipe:
             for _i, alias in resolved:
                 pipe.get(prefix_user + alias)
             raw_objs = await pipe.execute()
@@ -466,7 +470,7 @@ async def set_cache(
     prefix_alias = redis_cfg["prefix_alias"]
 
     try:
-        async with connection.pipeline(transaction=False) as pipe:
+        async with latency.span("redis.set_user"), connection.pipeline(transaction=False) as pipe:
             for k, v in userdata.get("users", {}).items():
                 k = str(k)
                 pipe.setex(prefix_user + k, expire, json.dumps(v))
@@ -511,7 +515,7 @@ async def set_negative_cache(s: str, neg_users: list[str], cfg: dict[str, Any]) 
     expire = redis_cfg["expire_negative"]
 
     try:
-        async with connection.pipeline(transaction=False) as pipe:
+        async with latency.span("redis.set_negative"), connection.pipeline(transaction=False) as pipe:
             for user in neg_users:
                 pipe.setex(prefix + user, expire, 1)
             await pipe.execute()

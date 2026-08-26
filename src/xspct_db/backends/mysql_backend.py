@@ -13,7 +13,7 @@ import re
 import timeit
 from typing import Any
 
-from xspct_db import stats
+from xspct_db import latency, stats
 from xspct_db.backends.base import (
     match_attributed_user,
     merge_userdata,
@@ -251,7 +251,11 @@ async def query(
 
     # Phase 3: execute the combined query once.
     try:
+        t_pool = timeit.default_timer()
         async with _pools[query_name].acquire() as conn:
+            # Time spent waiting for a pooled connection — the first thing to
+            # rise when maxsize is too low for the offered load.
+            latency.record("mysql.pool_acquire", timeit.default_timer() - t_pool)
             t0 = timeit.default_timer()
             try:
                 async with conn.cursor(aiomysql.DictCursor) as cur:
@@ -265,6 +269,7 @@ async def query(
 
             elapsed = timeit.default_timer() - t0
             stats.update_query_stats(query_name, elapsed)
+            latency.record("mysql.query", elapsed)
             logger.debug("%s (%s) - (%s) - mysql query took %.5fs", s, timer(), query_name, elapsed)
 
     except Exception as exc:

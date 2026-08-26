@@ -61,6 +61,66 @@ xspct_db_metrics_auth:
 | `xspct_db_stats_interval` | `60` | Interval between stats log lines (seconds) |
 | `xspct_db_stats_sample_interval` | `10` | Interval for pool connection sampling and Redis health-check PING (seconds) |
 
+## Latency Tracing
+
+Every query request is broken down into named *spans* (`redis.get_alias`,
+`ldap.search`, `backend.<query>`, `queue.fg_wait`, `prefilter`, `serialize`,
+`request.<endpoint>`, …).  Each span keeps a bounded rolling window of samples
+from which the **median** and the p90 / p99 percentiles are derived, so a slow
+part can be identified without correlating separate log lines.
+
+Two kinds of warning are emitted automatically:
+
+* **Span anomaly** — a single sample exceeding `anomaly_factor` × the span's
+  rolling median (and at least `anomaly_floor` seconds):
+
+  ```
+  LATENCY anomaly span=ldap.search value=1.84213s median=0.00421s p99=0.01120s factor=437.6x (anomalies=3/18422)
+  ```
+
+* **Slow request** — the request total exceeding `slow_request_factor` × the
+  median for that endpoint, printed with the full per-span breakdown so the
+  culprit is visible immediately:
+
+  ```
+  <a1b2c3-d4e5f6> SLOW query total=1.90112s median=0.00284s (669.4x) breakdown: ldap.search=1.84213s(1) redis.get_alias=0.05102s(1) serialize=0.00008s(1)
+  ```
+
+The rolling baseline is recomputed at most once per `baseline_interval`
+seconds per span, so the per-sample cost stays constant.  Anomaly logging is
+rate-limited to one line per span per `log_interval` seconds, so a backend
+outage cannot flood the log.
+
+```yaml
+xspct_db_latency:
+  enabled: true              # master switch
+  window: 2048               # rolling samples kept per span
+  min_samples: 50            # samples needed before anomalies are flagged
+  anomaly_factor: 4.0        # sample > median * factor  -> anomaly
+  anomaly_floor: 0.05        # ignore anomalies faster than this (seconds)
+  baseline_interval: 5.0     # min seconds between percentile recomputes
+  log_interval: 10.0         # min seconds between anomaly logs per span
+  slow_request_factor: 4.0   # request total > median * factor -> breakdown log
+  slow_request_floor: 0.1    # ignore slow-request logs below this (seconds)
+```
+
+The same numbers are printed on every periodic stats interval:
+
+```
+STATS latency[ldap.search] n=18422 avg=0.00512s median=0.00421s p90=0.00810s p99=0.01120s max=1.84213s anomalies=3
+```
+
+and, when `xspct_db_metrics_enabled` is true, exported to Prometheus as
+`xspct_db_span_median_seconds`, `xspct_db_span_p90_seconds`,
+`xspct_db_span_p99_seconds`, `xspct_db_span_max_seconds`,
+`xspct_db_span_anomalies_total`, `xspct_db_span_observations_total`, and the
+`xspct_db_span_duration_seconds` histogram (all labelled by `span`).  The
+histogram allows cross-instance quantiles:
+
+```promql
+histogram_quantile(0.99, sum by (span, le) (rate(xspct_db_span_duration_seconds_bucket[5m])))
+```
+
 ## Local (L1) Cache
 
 xspct_db maintains an in-process `TTLCache` (provided by `cachetools`) that sits in front of

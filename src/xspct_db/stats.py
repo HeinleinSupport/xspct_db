@@ -31,6 +31,9 @@ stats: dict[str, Any] = {
     "background_completed": 0,
     "background_rejected": 0,
     "background_errors": 0,
+    # live gauges: queries currently holding a foreground / background slot
+    "foreground_in_flight": 0,
+    "background_in_flight": 0,
     # wildcard domain fallback counters
     "wildcard_domain_hits": 0,
     "wildcard_domain_misses": 0,
@@ -64,6 +67,8 @@ def reset() -> None:
     stats["background_completed"] = 0
     stats["background_rejected"] = 0
     stats["background_errors"] = 0
+    stats["foreground_in_flight"] = 0
+    stats["background_in_flight"] = 0
     stats["wildcard_domain_hits"] = 0
     stats["wildcard_domain_misses"] = 0
     stats["prefilter_domain_hits"] = 0
@@ -271,6 +276,11 @@ def log_stats(cfg: dict[str, Any]) -> None:
                 hint,
             )
     stats["pool_connections"].clear()
+
+    # Rolling latency percentiles per instrumented span.
+    from xspct_db import latency
+
+    latency.log_summary()
 
     # Per-query timing
     for qk, qs in stats["queries"].items():

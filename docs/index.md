@@ -38,6 +38,7 @@ reference/auth
 reference/cache
 reference/config
 reference/stats
+reference/latency
 reference/utils
 reference/backends/index
 ```

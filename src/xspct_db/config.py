@@ -40,6 +40,19 @@ DEFAULTS: dict[str, Any] = {
     "xspct_db_stats_interval": 60,
     "xspct_db_stats_sample_interval": 10,
     "xspct_db_metrics_enabled": False,
+    # Latency tracing: rolling per-span median/p90/p99 + anomaly logging.
+    # See xspct_db.latency for the full semantics of each key.
+    "xspct_db_latency": {
+        "enabled": True,
+        "window": 2048,
+        "min_samples": 50,
+        "anomaly_factor": 4.0,
+        "anomaly_floor": 0.05,
+        "baseline_interval": 5.0,
+        "log_interval": 10.0,
+        "slow_request_factor": 4.0,
+        "slow_request_floor": 0.1,
+    },
     "xspct_db_metrics_cache_ttl": 5,
     "xspct_db_metrics_auth": {
         "enabled": False,
@@ -117,6 +130,7 @@ _DEEP_MERGE_KEYS = (
     "xspct_db_redis_cache",
     "xspct_db_tls",
     "xspct_db_metrics_auth",
+    "xspct_db_latency",
     "xspct_db_local_cache",
     "xspct_db_response_cache",
 )

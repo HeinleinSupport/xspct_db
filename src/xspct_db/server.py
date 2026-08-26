@@ -14,7 +14,7 @@ from typing import Any
 from aiohttp import web
 from aiohttp_pydantic import oas
 
-from xspct_db import __version__, cache
+from xspct_db import __version__, cache, latency
 from xspct_db import config as cfg_mod
 from xspct_db.metrics import setup_metrics
 from xspct_db.routes import compile_wildcard_rules, setup_routes
@@ -116,6 +116,9 @@ def create_app(config: dict[str, Any]) -> web.Application:
     client_max_size = int(config.get("xspct_db_client_max_size", 1048576))
     app = web.Application(client_max_size=client_max_size)
     app["config"] = config
+    latency.configure(config)
+    if latency.enabled():
+        app.middlewares.append(latency.make_latency_middleware())
     setup_routes(app)
     oas.setup(
         app,

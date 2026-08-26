@@ -250,6 +250,18 @@ class _StatsCollector:
                 "background_errors",
             ),
             (
+                "xspct_db_foreground_in_flight",
+                "gauge",
+                "Queries currently holding a foreground slot",
+                "foreground_in_flight",
+            ),
+            (
+                "xspct_db_background_in_flight",
+                "gauge",
+                "Timed-out queries still running in a background slot",
+                "background_in_flight",
+            ),
+            (
                 "xspct_db_wildcard_domain_hits_total",
                 "counter",
                 "Wildcard domain fallback hits",
@@ -302,6 +314,59 @@ class _StatsCollector:
                 m = GaugeMetricFamily(prom_name, doc)
                 m.add_metric([], float(val))
             metrics.append(m)
+
+        # Per-span rolling latency baselines (median / p90 / p99 / max) plus the
+        # anomaly counter.  These come from xspct_db.latency, which keeps a
+        # bounded rolling window per span — the same numbers the periodic STATS
+        # lines print, so log and scrape never disagree.
+        try:
+            from xspct_db import latency as _latency
+        except ImportError:  # pragma: no cover
+            _latency = None  # type: ignore[assignment]
+
+        if _latency is not None and _latency.enabled():
+            snap = _latency.snapshot()
+            if snap:
+                families = {
+                    "median": GaugeMetricFamily(
+                        "xspct_db_span_median_seconds",
+                        "Rolling median latency per instrumented span",
+                        labels=["span"],
+                    ),
+                    "p90": GaugeMetricFamily(
+                        "xspct_db_span_p90_seconds",
+                        "Rolling 90th percentile latency per instrumented span",
+                        labels=["span"],
+                    ),
+                    "p99": GaugeMetricFamily(
+                        "xspct_db_span_p99_seconds",
+                        "Rolling 99th percentile latency per instrumented span",
+                        labels=["span"],
+                    ),
+                    "max": GaugeMetricFamily(
+                        "xspct_db_span_max_seconds",
+                        "Highest latency observed per instrumented span",
+                        labels=["span"],
+                    ),
+                }
+                anomalies_m = CounterMetricFamily(
+                    "xspct_db_span_anomalies_total",
+                    "Samples exceeding the anomaly factor over the rolling median",
+                    labels=["span"],
+                )
+                observed_m = CounterMetricFamily(
+                    "xspct_db_span_observations_total",
+                    "Latency samples recorded per instrumented span",
+                    labels=["span"],
+                )
+                for span_name, values in snap.items():
+                    for key, family in families.items():
+                        family.add_metric([span_name], float(values[key]))
+                    anomalies_m.add_metric([span_name], float(values["anomalies"]))
+                    observed_m.add_metric([span_name], float(values["count"]))
+                metrics.extend(families.values())
+                metrics.append(anomalies_m)
+                metrics.append(observed_m)
 
         # Per-query timing
         queries = s.get("queries", {})

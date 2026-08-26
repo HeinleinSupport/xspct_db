@@ -13,7 +13,7 @@ import logging
 import timeit
 from typing import Any
 
-from xspct_db import stats
+from xspct_db import latency, stats
 from xspct_db.backends.base import (
     match_attributed_user,
     merge_userdata,
@@ -191,7 +191,11 @@ async def query(
 
     # Phase 3: execute the combined search once.
     try:
+        t_pool = timeit.default_timer()
         async with _pools[query_name].spawn() as conn:
+            # Time spent waiting for a pooled connection — the first thing to
+            # rise when maxconn is too low for the offered load.
+            latency.record("ldap.pool_acquire", timeit.default_timer() - t_pool)
             t0 = timeit.default_timer()
             try:
                 search = await conn.search(
@@ -207,6 +211,7 @@ async def query(
 
             elapsed = timeit.default_timer() - t0
             stats.update_query_stats(query_name, elapsed)
+            latency.record("ldap.search", elapsed)
             logger.debug("%s (%s) - (%s) - ldap query took %.5fs, results: %d", s, timer(), query_name, elapsed, len(search))
             logger.debug("%s (%s) - (%s) - ldap raw results: %s", s, timer(), query_name, search)
 

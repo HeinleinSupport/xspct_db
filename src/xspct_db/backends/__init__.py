@@ -10,7 +10,7 @@ import logging
 import timeit
 from typing import Any
 
-from xspct_db import cache, stats
+from xspct_db import cache, latency, stats
 from xspct_db.backends.base import merge_userdata
 
 logger = logging.getLogger(__name__)
@@ -74,6 +74,9 @@ async def _execute_query(
             userdata, user_to_pkey, query_error = await mod.query(s, qk, users, userdata, user_to_pkey, cfg)
 
     elapsed = timeit.default_timer() - t0
+    # Total time for this configured query including pool acquisition — the
+    # backend modules additionally record the pure query/pool spans.
+    latency.record("backend." + qk, elapsed)
     logger.debug("%s - query[%s] took %.5fs", s, qk, elapsed)
     if db_type not in ("ldap", "mysql"):
         stats.update_query_stats(qk, elapsed)

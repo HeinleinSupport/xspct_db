@@ -137,3 +137,72 @@ async def test_metrics_aggregates_multiple_requests():
         body = await resp.text()
         # The http_requests_total counter should appear in the output.
         assert "http_requests_total" in body
+
+
+async def test_latency_spans_recorded_for_query_requests():
+    """A real query request populates the per-span latency tracker."""
+    from xspct_db import latency
+
+    cfg = _base_cfg(xspct_db_metrics_enabled=False)
+    app = create_app(cfg)
+    latency.reset()
+    async with TestClient(TestServer(app)) as c:
+        resp = await c.get("/v1/query/alice@mailexample.de", headers={"X-Api-Key": "test-key"})
+        assert resp.status == 200
+
+    snap = latency.snapshot()
+    # Total request span plus the parts measured inside it.
+    assert snap["request.query"]["count"] == 1
+    assert "prefilter" in snap
+    assert "serialize" in snap
+    assert "backend.test_dummy" in snap
+
+
+async def test_latency_not_recorded_for_health_endpoints():
+    """Health/ping requests are not folded into the query percentiles."""
+    from xspct_db import latency
+
+    cfg = _base_cfg(xspct_db_metrics_enabled=False)
+    app = create_app(cfg)
+    latency.reset()
+    async with TestClient(TestServer(app)) as c:
+        assert (await c.get("/ping")).status == 200
+
+    assert "request.query" not in latency.snapshot()
+
+
+async def test_latency_disabled_records_nothing():
+    """xspct_db_latency.enabled=false switches the tracker off entirely."""
+    from xspct_db import latency
+
+    cfg = _base_cfg(
+        xspct_db_metrics_enabled=False,
+        xspct_db_latency={"enabled": False},
+    )
+    app = create_app(cfg)
+    async with TestClient(TestServer(app)) as c:
+        resp = await c.get("/v1/query/alice@mailexample.de", headers={"X-Api-Key": "test-key"})
+        assert resp.status == 200
+
+    assert latency.snapshot() == {}
+    latency.configure({})
+
+
+async def test_metrics_exposes_latency_spans():
+    """Span percentiles and the duration histogram appear in /metrics output."""
+    from xspct_db import latency
+
+    cfg = _base_cfg(xspct_db_metrics_enabled=True, xspct_db_metrics_cache_ttl=0)
+    app = create_app(cfg)
+    latency.reset()
+    async with TestClient(TestServer(app)) as c:
+        resp = await c.get("/v1/query/alice@mailexample.de", headers={"X-Api-Key": "test-key"})
+        assert resp.status == 200
+
+        body = await (await c.get("/metrics")).text()
+
+    assert "xspct_db_span_median_seconds" in body
+    assert "xspct_db_span_p99_seconds" in body
+    assert "xspct_db_span_anomalies_total" in body
+    assert 'xspct_db_span_duration_seconds_bucket{le="0.0005",span="serialize"}' in body
+    assert "xspct_db_foreground_in_flight" in body
