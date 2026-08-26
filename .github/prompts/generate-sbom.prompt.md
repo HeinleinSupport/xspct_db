@@ -11,7 +11,7 @@ Generate the dependency SBOM for xspct_db and commit the result.
 The active virtualenv must have all optional extras installed for full dependency coverage:
 
 ```bash
-pip install -e ".[all,dev]"
+pip install -e ".[all,dev,docs]"
 ```
 
 ## Steps (run in order — stop and report on failure)
@@ -21,10 +21,20 @@ pip install -e ".[all,dev]"
 Covers the installed dependency tree:
 
 ```bash
-.venv/bin/cyclonedx-py environment --of JSON -o bom.json
+.venv/bin/cyclonedx-py environment --of JSON --pyproject pyproject.toml \
+  -o bom.json .venv/bin/python
 ```
 
-Report the number of components listed.
+`--pyproject` is required: without it the SBOM has no root component and the
+`metadata.component` entry is empty, so nothing records which version of
+xspct_db the dependency tree belongs to.
+
+Report the number of components listed and confirm `metadata.component` reads
+`xspct_db` at the current version:
+
+```bash
+python3 -c "import json; m=json.load(open('bom.json'))['metadata']['component']; print(m['name'], m['version'])"
+```
 
 ### 2. Verify REUSE compliance still passes
 
