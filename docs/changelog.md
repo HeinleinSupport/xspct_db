@@ -7,6 +7,26 @@
 
 ## Unreleased
 
+## 0.8.1 (2026-10-13)
+
+### Project
+- Static type checking with [pyrefly](https://pyrefly.org): configured under
+  `[tool.pyrefly]` in `pyproject.toml`, with the findings that predate it
+  recorded in `.pyrefly-baseline.json` so only new type errors fail the check;
+  a `typecheck` CI job runs it and `pyrefly` joins the `dev` extra
+- `/check-code`, `/prepare-commit` and the release checklist now include the
+  pyrefly check
+
+### Fixes
+- Annotated subscript assignment of `app["bg_tasks"]` in the server startup hook
+  was rejected by type checkers as invalid syntax; it is now a plain assignment
+
+### Documentation
+- README rewritten around what the service does and how its pieces fit
+  together, with the project logo
+- The logos and icons in `docs/_static` are licensed CC-BY-ND-4.0
+  (© 2026 Heinlein Support GmbH); everything else stays EUPL-1.2
+
 ## 0.8.0 (2026-08-26)
 
 ### Performance

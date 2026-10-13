@@ -4450,9 +4450,9 @@
       ],
       "name": "xspct_db",
       "type": "application",
-      "version": "0.8.0"
+      "version": "0.8.1"
     },
-    "timestamp": "2026-10-13T21:01:13.525658+00:00",
+    "timestamp": "2026-10-13T21:09:48.124802+00:00",
     "tools": {
       "components": [
         {
@@ -4556,7 +4556,7 @@
       ]
     }
   },
-  "serialNumber": "urn:uuid:e890d5f8-a17d-4f68-aad1-eae5611aa630",
+  "serialNumber": "urn:uuid:b3fe97cf-c553-4029-9f86-ccd25166579a",
   "version": 1,
   "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
   "bomFormat": "CycloneDX",
