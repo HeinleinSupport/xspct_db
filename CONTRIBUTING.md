@@ -89,11 +89,12 @@ Mark with `!` after the scope (e.g. `feat(api)!: ...`) and/or a
 ```bash
 ruff format src/ tests/
 ruff check src/ tests/
+pyrefly check
 reuse lint
 pytest
 ```
 
 CI runs the same checks against Python 3.10–3.12, plus `pip-audit`, CodeQL,
-and a dependency licence review. The `ruff` version is pinned in
+and a dependency licence review. The `ruff` and `pyrefly` versions are pinned in
 `.github/workflows/ci.yml`; keep a local install at the same version to avoid
 surprises between a green local run and a red CI run.

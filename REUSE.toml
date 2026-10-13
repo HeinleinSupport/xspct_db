@@ -21,7 +21,7 @@ SPDX-License-Identifier = "EUPL-1.2"
 
 # ── Generated SBOM artifacts ────────────────────────────────────────────────
 [[annotations]]
-path = ["bom.json"]
+path = ["bom.json", ".pyrefly-baseline.json"]
 precedence = "override"
 SPDX-FileCopyrightText = "2026 Carsten Rosenberg <c.rosenberg@heinlein-support.de>"
 SPDX-License-Identifier = "EUPL-1.2"

@@ -83,7 +83,7 @@ async def _on_startup(app: web.Application) -> None:
     # Foreground / background query semaphores
     app["fg_sem"] = asyncio.Semaphore(int(cfg.get("xspct_db_foreground_slots", 30)))
     app["bg_sem"] = asyncio.Semaphore(int(cfg.get("xspct_db_background_slots", 5)))
-    app["bg_tasks"]: set[asyncio.Task] = set()
+    app["bg_tasks"] = set()
 
 
 async def _on_shutdown(app: web.Application) -> None:

@@ -42,7 +42,7 @@ tests/                 # pytest test suite (pytest-asyncio, asyncio_mode = "auto
   metrics/             # Per-metrics-module unit tests
 LICENSES/EUPL-1.2.txt  # Canonical license text (REUSE)
 REUSE.toml             # REUSE compliance manifest
-pyproject.toml         # Build metadata (hatchling) + ruff + pytest config
+pyproject.toml         # Build metadata (hatchling) + ruff + pyrefly + pytest config
 ```
 
 ## Commands
@@ -62,6 +62,10 @@ ruff check src/ tests/              # lint
 ruff check --select I --fix src/ tests/  # fix import order
 ruff format src/ tests/             # format
 
+# Type check (pyrefly; pre-existing errors live in .pyrefly-baseline.json)
+pyrefly check
+pyrefly check --update-baseline     # only after deliberately accepting new findings
+
 # REUSE compliance check
 reuse lint
 
@@ -73,7 +77,7 @@ cd docs && sphinx-build -b html . _build/html
 
 | Command | Description |
 |---------|-------------|
-| `/check-code` | ruff lint + reuse lint |
+| `/check-code` | ruff lint + pyrefly + reuse lint |
 | `/format-code` | ruff format + import sort |
 | `/run-tests` | pytest (optional -k filter, --cov) |
 | `/prepare-commit` | full pre-commit workflow → suggests GPG-signed commit |

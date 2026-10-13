@@ -1,0 +1,347 @@
+{
+  "errors": [
+    {
+      "column": 21,
+      "path": "src/xspct_db/latency.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `canonical`",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "src/xspct_db/metrics/middleware.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `canonical`",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "src/xspct_db/metrics/registry.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "src/xspct_db/metrics/registry.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "src/xspct_db/metrics/registry.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 16,
+      "path": "src/xspct_db/metrics/registry.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 16,
+      "path": "src/xspct_db/metrics/registry.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 16,
+      "path": "src/xspct_db/metrics/registry.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "src/xspct_db/metrics/registry.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "src/xspct_db/metrics/registry.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 31,
+      "path": "src/xspct_db/metrics/registry.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 28,
+      "path": "src/xspct_db/metrics/registry.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 28,
+      "path": "src/xspct_db/metrics/registry.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 28,
+      "path": "src/xspct_db/metrics/registry.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 31,
+      "path": "src/xspct_db/metrics/registry.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 30,
+      "path": "src/xspct_db/metrics/registry.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 23,
+      "path": "src/xspct_db/metrics/registry.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 26,
+      "path": "src/xspct_db/metrics/registry.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `None`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/xspct_db/metrics/registry.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `register`",
+      "severity": "error"
+    },
+    {
+      "column": 45,
+      "path": "src/xspct_db/routes.py",
+      "name": "bad-return",
+      "concise_description": "Function declared to return `tuple[bytes, str]`, but one or more paths are missing an explicit `return`",
+      "severity": "error"
+    },
+    {
+      "column": 24,
+      "path": "src/xspct_db/routes.py",
+      "name": "bad-return",
+      "concise_description": "Returned type `tuple[bytes | Unknown | None, Literal['application/msgpack']]` is not assignable to declared return type `tuple[bytes, str]`",
+      "severity": "error"
+    },
+    {
+      "column": 28,
+      "path": "src/xspct_db/routes.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `Payload | bytearray | bytes` is not assignable to parameter `obj` with type `Sized` in function `len`",
+      "severity": "error"
+    },
+    {
+      "column": 24,
+      "path": "src/xspct_db/routes.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `NoneType` has no attribute `canonical`",
+      "severity": "error"
+    },
+    {
+      "column": 28,
+      "path": "src/xspct_db/routes.py",
+      "name": "unsupported-operation",
+      "concise_description": "`type[Any]` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 28,
+      "path": "src/xspct_db/routes.py",
+      "name": "unsupported-operation",
+      "concise_description": "`type[Any]` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 42,
+      "path": "src/xspct_db/routes.py",
+      "name": "unsupported-operation",
+      "concise_description": "`type[Any]` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 64,
+      "path": "src/xspct_db/routes.py",
+      "name": "unsupported-operation",
+      "concise_description": "`type[Any]` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 86,
+      "path": "src/xspct_db/routes.py",
+      "name": "unsupported-operation",
+      "concise_description": "`type[Any]` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 108,
+      "path": "src/xspct_db/routes.py",
+      "name": "unsupported-operation",
+      "concise_description": "`type[Any]` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 29,
+      "path": "src/xspct_db/routes.py",
+      "name": "unsupported-operation",
+      "concise_description": "`type[Any]` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 51,
+      "path": "src/xspct_db/routes.py",
+      "name": "unsupported-operation",
+      "concise_description": "`type[Any]` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 73,
+      "path": "src/xspct_db/routes.py",
+      "name": "unsupported-operation",
+      "concise_description": "`type[Any]` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 34,
+      "path": "src/xspct_db/routes.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `int` is not assignable to parameter `content_type` with type `str | None` in function `aiohttp.web_response.Response.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 52,
+      "path": "src/xspct_db/routes.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `tuple[bytes, str]` is not assignable to parameter `body` with type `bytes` in function `xspct_db.cache.set_response`",
+      "severity": "error"
+    },
+    {
+      "column": 29,
+      "path": "src/xspct_db/routes.py",
+      "name": "unsupported-operation",
+      "concise_description": "`type[Any]` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 60,
+      "path": "src/xspct_db/routes.py",
+      "name": "unsupported-operation",
+      "concise_description": "`type[Any]` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 34,
+      "path": "src/xspct_db/routes.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `int` is not assignable to parameter `content_type` with type `str | None` in function `aiohttp.web_response.Response.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 52,
+      "path": "src/xspct_db/routes.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `tuple[bytes, str]` is not assignable to parameter `body` with type `bytes` in function `xspct_db.cache.set_response`",
+      "severity": "error"
+    },
+    {
+      "column": 42,
+      "path": "src/xspct_db/stats.py",
+      "name": "unsupported-operation",
+      "concise_description": "Cannot set item in `dict[str, dict[str, Unknown]]`",
+      "severity": "error"
+    },
+    {
+      "column": 97,
+      "path": "tests/conftest.py",
+      "name": "bad-return",
+      "concise_description": "Async generator function should return `AsyncGenerator`",
+      "severity": "error"
+    },
+    {
+      "column": 1,
+      "path": "tests/metrics/test_middleware.py",
+      "name": "no-matching-overload",
+      "concise_description": "No matching overload found for function `pytest_asyncio.plugin.fixture` called with arguments: ((reg: CollectorRegistry) -> TestClient[Unknown, Unknown])",
+      "severity": "error"
+    },
+    {
+      "column": 45,
+      "path": "tests/metrics/test_middleware.py",
+      "name": "bad-return",
+      "concise_description": "Async generator function should return `AsyncGenerator`",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "tests/test_cache.py",
+      "name": "unsupported-operation",
+      "concise_description": "Cannot set item in `None`",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "tests/test_cache.py",
+      "name": "unsupported-operation",
+      "concise_description": "Cannot set item in `None`",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "tests/test_cache.py",
+      "name": "unsupported-operation",
+      "concise_description": "Cannot set item in `None`",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "tests/test_cache.py",
+      "name": "unsupported-operation",
+      "concise_description": "Cannot set item in `None`",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "tests/test_cache.py",
+      "name": "unsupported-operation",
+      "concise_description": "Cannot set item in `None`",
+      "severity": "error"
+    },
+    {
+      "column": 12,
+      "path": "tests/test_latency.py",
+      "name": "unsupported-operation",
+      "concise_description": "`None` is not subscriptable",
+      "severity": "error"
+    },
+    {
+      "column": 12,
+      "path": "tests/test_latency.py",
+      "name": "unsupported-operation",
+      "concise_description": "`None` is not subscriptable",
+      "severity": "error"
+    }
+  ]
+}

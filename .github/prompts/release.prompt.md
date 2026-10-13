@@ -64,6 +64,7 @@ version `X.Y.Z`.
 ```bash
 .venv/bin/ruff check src/ tests/
 .venv/bin/ruff format --check src/ tests/
+.venv/bin/pyrefly check
 .venv/bin/reuse lint
 .venv/bin/python -m pytest --tb=short
 ```

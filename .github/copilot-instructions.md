@@ -140,11 +140,14 @@ Run checks with:
 ruff check src/ tests/              # lint (E, F, W, I rules)
 ruff check --select I --fix src/ tests/  # fix import order
 ruff format src/ tests/             # format (line-length = 100)
+pyrefly check                       # type check (errors outside .pyrefly-baseline.json fail)
 reuse lint                          # SPDX / REUSE compliance
 ```
 
+Fix new pyrefly errors rather than regenerating `.pyrefly-baseline.json`; only run `pyrefly check --update-baseline` when the user asks.
+
 Slash commands available in VS Code Copilot chat:
-- `/check-code` — ruff lint + reuse lint
+- `/check-code` — ruff lint + pyrefly + reuse lint
 - `/format-code` — ruff format + import sort
 - `/run-tests` — pytest (optional `-k <filter>` or `--cov`)
 - `/prepare-commit` — full pre-commit workflow with GPG reminder

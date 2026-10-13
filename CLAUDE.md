@@ -17,6 +17,14 @@ pytest tests/backends/test_dummy.py # single file
 pytest --cov=xspct_db               # with coverage
 ```
 
+### Lint and type check
+```bash
+ruff check src/ tests/
+ruff format src/ tests/
+pyrefly check                       # errors outside .pyrefly-baseline.json fail
+reuse lint
+```
+
 ### Run the daemon
 ```bash
 xspct-db /etc/xspct-db.yml
@@ -115,6 +123,7 @@ Background tasks are managed by `_finalize_background()`: always releases `bg_se
 - **Dependencies**: core in `[project.dependencies]`; optional extras (`ldap`, `mysql`, `redis`, `uvloop`, `all`) in `[project.optional-dependencies]`.
 - DO NOT add blocking I/O — always use async equivalents.
 - DO NOT skip SPDX headers on new files.
+- DO NOT regenerate `.pyrefly-baseline.json` to silence new type errors; fix them, and only run `pyrefly check --update-baseline` when asked.
 - DO NOT change the `text/plain; version=0.0.4` content-type in `routes.py` — it is protocol-mandated by Rspamd.
 - ONLY touch `REUSE.toml` when adding non-source assets that need explicit annotation.
 - **Test email addresses** must use `@mailexample.de` as the domain. Do not use any other domain in tests.

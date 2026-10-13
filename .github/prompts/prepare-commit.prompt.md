@@ -1,5 +1,5 @@
 ---
-description: "Full pre-commit workflow for xspct_db: format, lint, REUSE check, tests, stage changes, and suggest a Conventional Commits GPG-signed commit message."
+description: "Full pre-commit workflow for xspct_db: format, lint, type check, REUSE check, tests, stage changes, and suggest a Conventional Commits GPG-signed commit message."
 agent: agent
 tools: [execute, read, search]
 ---
@@ -20,6 +20,12 @@ Report any files reformatted.
 .venv/bin/ruff check src/ tests/
 ```
 If there are lint errors, **stop** and report them. Do not proceed until the user resolves them.
+
+Then type-check (errors already in `.pyrefly-baseline.json` are tolerated; any new error fails):
+```bash
+.venv/bin/pyrefly check
+```
+If it reports new errors, **stop** and report them. Never run `--update-baseline` unless the user asks.
 
 ### 3. REUSE / SPDX compliance
 ```bash
