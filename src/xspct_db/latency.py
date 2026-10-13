@@ -148,8 +148,8 @@ class SpanStats:
         self.p90: float = 0.0
         self.p99: float = 0.0
         self.anomalies: int = 0
-        self._baseline_at: float = 0.0
-        self._logged_at: float = 0.0
+        self._baseline_at: float | None = None
+        self._logged_at: float | None = None
 
     # -- baseline ---------------------------------------------------------
 
@@ -173,7 +173,7 @@ class SpanStats:
             self.max = value
 
         now = monotonic()
-        if now - self._baseline_at >= _baseline_interval and len(self.samples) >= _min_samples:
+        if (self._baseline_at is None or now - self._baseline_at >= _baseline_interval) and len(self.samples) >= _min_samples:
             self.recompute()
 
         median = self.median
@@ -183,7 +183,7 @@ class SpanStats:
             return False
 
         self.anomalies += 1
-        if now - self._logged_at >= _log_interval:
+        if self._logged_at is None or now - self._logged_at >= _log_interval:
             self._logged_at = now
             logger.warning(
                 "LATENCY anomaly span=%s value=%.5fs median=%.5fs p99=%.5fs factor=%.1fx (anomalies=%d/%d)",

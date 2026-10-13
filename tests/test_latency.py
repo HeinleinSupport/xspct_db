@@ -165,6 +165,17 @@ def test_anomaly_logging_is_rate_limited(caplog):
     assert caplog.text.count("LATENCY anomaly") == 1
 
 
+def test_first_anomaly_is_logged_on_a_freshly_booted_host(caplog, monkeypatch):
+    # monotonic() counts from boot on Linux; the first warning must not depend on uptime.
+    monkeypatch.setattr(latency, "monotonic", lambda: 100.0)
+    latency.configure(_cfg(min_samples=10, anomaly_factor=4.0, anomaly_floor=0.05, baseline_interval=0, log_interval=3600))
+    for _ in range(50):
+        latency.record("mysql.query", 0.01)
+    with caplog.at_level(logging.WARNING, logger="xspct_db.latency"):
+        latency.record("mysql.query", 2.0)
+    assert caplog.text.count("LATENCY anomaly") == 1
+
+
 # ---------------------------------------------------------------------------
 # Per-request span collection
 # ---------------------------------------------------------------------------
