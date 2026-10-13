@@ -1,11 +1,58 @@
+<!-- markdownlint-disable MD033 MD041 -->
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/_static/xspct_db-dark.svg">
+    <img src="docs/_static/xspct_db.svg" alt="xspct_db" width="400">
+  </picture>
+</p>
+
 # xspct_db
 
-A multi-backend database query service with two-layer caching, concurrency control, and Rspamd integration.
+<!-- markdownlint-enable MD033 MD041 -->
 
-Provides an async HTTP API (aiohttp) for querying user data from LDAP, MySQL, and YAML backends,
-with a two-layer object cache (in-process L1 `TTLCache` + optional Redis L2), a response-level
-cache for batch POST endpoints, foreground/background query queues with semaphore-based concurrency
-control, API-key authentication, Prometheus metrics, and TLS support.
+**xspct_db** is an async user-data query service for mail filtering. It puts a single
+HTTP API in front of LDAP directories, MySQL databases, and static YAML data, so mail
+filters and other clients can look up users and their settings without implementing
+each backend's protocol, connection pooling, or caching themselves.
+
+Rspamd is a primary integration: xspct_db can turn user data into a settings response
+for the current message. The same service also exposes single-user and batch lookup
+endpoints for clients that need the underlying data rather than Rspamd settings.
+
+## Overview
+
+In a mail system, account information and filtering preferences may live in different
+places. A directory might hold mailbox addresses and aliases, while a database holds
+per-user policy and YAML supplies local overrides. xspct_db brings these sources
+together through configurable queries and returns a combined user object.
+
+- **Combine data sources.** Configure multiple LDAP, MySQL, or YAML queries, translate
+  backend fields into a common structure, and merge their results. Queries can use
+  earlier results with `use_result`, or run in parallel phases where configured.
+- **Resolve addresses consistently.** Rewrite relay addresses or SASL realms to a
+  canonical mailbox before lookup. Optional domain and pattern prefilters exclude
+  addresses before cache or backend access; wildcard domain queries provide a
+  configurable fallback when a regular lookup finds no user.
+- **Build Rspamd settings.** The `/v1/rspamd-settings` endpoint evaluates configurable
+  rules against the queried user data to produce message-specific settings. Alias
+  mapping and reject-level translation help adapt existing account preferences to
+  Rspamd without duplicating that logic in each client.
+- **Reuse lookup results.** An in-process object cache serves repeated lookups, with
+  optional Redis as a shared second layer. Positive and negative results have
+  configurable lifetimes. A separate response cache stores complete batch and
+  Rspamd settings responses, avoiding repeated querying and serialization.
+- **Bound client waiting time.** When request timeouts are enabled, separate
+  foreground and background slot pools limit concurrent work. A query that exceeds
+  its timeout returns `504` and can continue in the background to warm the cache;
+  exhausted foreground capacity returns `503`.
+- **Operate as a standalone service.** The aiohttp server supports API-key
+  authentication, optional TLS, JSON and optional msgpack responses, Prometheus
+  metrics, and latency tracing. Backends and optional integrations are selected
+  through a single YAML configuration file.
+
+The service supplies data and settings; it does not scan message content or replace
+Rspamd's filtering engine. Clients remain responsible for applying the returned
+information to their mail-processing decisions.
 
 ## Installation
 
@@ -147,6 +194,10 @@ python -m sphinx -b html docs docs/_build/html
 ## License
 
 European Union Public Licence v. 1.2 (EUPL-1.2) — see [LICENSES/EUPL-1.2.txt](LICENSES/EUPL-1.2.txt).
+
+The logos and app icons in [docs/_static](docs/_static) are licensed separately under
+[Creative Commons Attribution-NoDerivatives 4.0 International](LICENSES/CC-BY-ND-4.0.txt),
+copyright 2026 Heinlein Support GmbH.
 
 ## Changelog
 

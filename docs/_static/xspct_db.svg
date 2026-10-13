@@ -1,0 +1,39 @@
+<!--
+  xspct_db
+  Async user-data query service for mail filtering with LDAP, MySQL and YAML backends, caching and Rspamd settings integration.
+  
+  Author:  Carsten Rosenberg
+  Company: Heinlein Support GmbH
+  (c) 2026 Heinlein Support GmbH. Licensed under Creative Commons Attribution-NoDerivatives 4.0 International (CC BY-ND 4.0).
+  https://creativecommons.org/licenses/by-nd/4.0/
+  
+  Wordmark set in Sora (SIL Open Font License 1.1), converted to paths.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 110" width="496" height="110">
+  <title>xspct_db</title>
+  <desc>Async user-data query service for mail filtering with LDAP, MySQL and YAML backends, caching and Rspamd settings integration.</desc>
+  <metadata>
+    <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+             xmlns:dc="http://purl.org/dc/elements/1.1/"
+             xmlns:cc="http://creativecommons.org/ns#">
+      <cc:Work rdf:about="">
+        <dc:title>xspct_db</dc:title>
+        <dc:description>Async user-data query service for mail filtering with LDAP, MySQL and YAML backends, caching and Rspamd settings integration.</dc:description>
+        <dc:creator><cc:Agent><dc:title>Carsten Rosenberg</dc:title></cc:Agent></dc:creator>
+        <dc:publisher><cc:Agent><dc:title>Heinlein Support GmbH</dc:title></cc:Agent></dc:publisher>
+        <dc:rights><cc:Agent><dc:title>(c) 2026 Heinlein Support GmbH</dc:title></cc:Agent></dc:rights>
+        <dc:date>2026</dc:date>
+        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+        <cc:license rdf:resource="https://creativecommons.org/licenses/by-nd/4.0/"/>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g transform="translate(10,5)">
+    <line x1="10" y1="10" x2="38" y2="38" stroke="#1F3E45" stroke-width="10" fill="none"/>
+    <line x1="62" y1="62" x2="90" y2="90" stroke="#1F3E45" stroke-width="10" fill="none"/>
+    <line x1="90" y1="10" x2="62" y2="38" stroke="#1F3E45" stroke-width="10" fill="none"/>
+    <line x1="38" y1="62" x2="10" y2="90" stroke="#1F3E45" stroke-width="10" fill="none"/>
+    <rect x="40" y="40" width="20" height="20" transform="rotate(45 50 50)" fill="#F08020"/>
+  </g>
+  <g fill="#1F3E45"><g transform="translate(135 80) scale(0.072 -0.072)"><g transform="translate(0.000 0)"><path d="M17 0 194 289.5 190.5 266.5 24 543H175L284 352H299L402 543H543.5L385.5 267.5L389 287.5L575.5 0H424.5L295.5 205H280.5L158.5 0Z"/></g><g transform="translate(573.111 0)"><path d="M276 -17Q163.5 -17 100.25 30.25Q37 77.5 33.5 161.5H158.5Q161.5 133.5 189.75 110.75Q218 88 278 88Q327.5 88 357.25 106.0Q387 124 387 154.5Q387 181.5 364.5 197.5Q342 213.5 287.5 219L239.5 224Q148.5 233.5 99.5 275.75Q50.5 318 50.5 387.5Q50.5 443.5 78.5 481.5Q106.5 519.5 156.0 539.25Q205.5 559 269.5 559Q370 559 432.0 514.75Q494 470.5 497 385.5H372Q369.5 414 343.75 434.0Q318 454 268.5 454Q225 454 200.75 437.0Q176.5 420 176.5 392.5Q176.5 367 196.0 353.0Q215.5 339 259.5 334L307.5 329Q403.5 319 458.25 276.0Q513 233 513 159.5Q513 106 483.5 66.25Q454 26.5 400.75 4.75Q347.5 -17 276 -17Z"/></g><g transform="translate(1108.222 0)"><path d="M79 -200V543H189V308.5L172 309.5Q176 393 206.5 448.75Q237 504.5 288.0 532.25Q339 560 402 560Q459.5 560 506.25 538.75Q553 517.5 586.5 479.75Q620 442 637.75 391.5Q655.5 341 655.5 282.5V261.5Q655.5 203 638.0 152.25Q620.5 101.5 587.25 63.25Q554 25 507.0 3.5Q460 -18 401.5 -18Q341 -18 290.5 7.25Q240 32.5 208.75 86.25Q177.5 140 174 224.5L218 157.5V-200ZM366.5 99Q411.5 99 445.25 121.0Q479 143 497.75 182.25Q516.5 221.5 516.5 272Q516.5 323.5 497.75 361.75Q479 400 445.5 421.5Q412 443 366.5 443Q326 443 291.25 424.75Q256.5 406.5 235.25 371.75Q214 337 214 288V248Q214 201 236.0 167.75Q258 134.5 293.0 116.75Q328 99 366.5 99Z"/></g><g transform="translate(1793.333 0)"><path d="M319.5 -19Q249 -19 197.25 4.75Q145.5 28.5 111.25 68.75Q77 109 60.0 159.0Q43 209 43 261V280Q43 334.5 60.5 385.0Q78 435.5 112.75 475.25Q147.5 515 199.0 538.5Q250.5 562 318.5 562Q390 562 445.75 534.5Q501.5 507 535.0 458.0Q568.5 409 572.5 344H437.5Q432.5 385.5 402.25 413.75Q372 442 318.5 442Q272.5 442 242.25 420.0Q212 398 197.0 359.5Q182 321 182 270.5Q182 222.5 196.25 183.75Q210.5 145 241.0 123.0Q271.5 101 319.5 101Q356 101 382.0 114.0Q408 127 423.5 149.75Q439 172.5 442.5 202H577.5Q574 135.5 539.5 86.0Q505 36.5 448.25 8.75Q391.5 -19 319.5 -19Z"/></g><g transform="translate(2389.444 0)"><path d="M314.5 -7Q239.5 -7 191.0 12.5Q142.5 32 118.75 78.25Q95 124.5 95 203.5L95.5 696H225.5L225 195Q225 155 246.5 133.5Q268 112 308 112H393V-7ZM9 441V543H393V441Z"/></g><g transform="translate(2806.556 0)"><path d="M0 -158V-54H585V-158Z"/></g><g transform="translate(3377.667 0)"><path d="M304 -18Q246.5 -18 198.75 3.0Q151 24 116.0 61.75Q81 99.5 62.0 150.0Q43 200.5 43 259.5V280.5Q43 339 61.25 389.75Q79.5 440.5 113.25 478.75Q147 517 194.25 538.5Q241.5 560 299.5 560Q363.5 560 412.25 532.5Q461 505 489.75 450.0Q518.5 395 521.5 312L480.5 359.5V730H619.5V0H509.5V230.5H533.5Q530.5 148 499.5 92.5Q468.5 37 418.0 9.5Q367.5 -18 304 -18ZM335 99Q376 99 409.75 117.5Q443.5 136 464.0 171.25Q484.5 206.5 484.5 255V295Q484.5 342.5 463.5 375.25Q442.5 408 408.5 425.5Q374.5 443 334.5 443Q290 443 255.5 421.25Q221 399.5 201.5 360.75Q182 322 182 270Q182 218 201.75 179.5Q221.5 141 256.25 120.0Q291 99 335 99Z"/></g><g transform="translate(4062.778 0)"><path d="M398 -18Q331 -18 280.0 10.5Q229 39 199.75 93.75Q170.5 148.5 168 226.5H189V0H79V730H218V364.5L181 308Q184.5 392 214.0 448.0Q243.5 504 293.5 532.0Q343.5 560 406.5 560Q463 560 509.0 539.0Q555 518 587.75 480.5Q620.5 443 638.0 392.75Q655.5 342.5 655.5 283.5V262.5Q655.5 203.5 637.75 152.75Q620 102 586.0 63.5Q552 25 504.5 3.5Q457 -18 398 -18ZM366.5 99Q411.5 99 445.25 121.25Q479 143.5 497.75 182.75Q516.5 222 516.5 273Q516.5 324.5 497.5 362.75Q478.5 401 445.0 422.0Q411.5 443 366.5 443Q326 443 291.25 424.75Q256.5 406.5 235.25 371.75Q214 337 214 288V248Q214 201 236.0 167.75Q258 134.5 293.0 116.75Q328 99 366.5 99Z"/></g></g></g>
+</svg>
