@@ -989,7 +989,7 @@
       "version": "3.5.1"
     },
     {
-      "bom-ref": "click==8.4.2",
+      "bom-ref": "click==8.5.0",
       "description": "Composable command line interface toolkit",
       "externalReferences": [
         {
@@ -1027,9 +1027,9 @@
         }
       ],
       "name": "click",
-      "purl": "pkg:pypi/click@8.4.2",
+      "purl": "pkg:pypi/click@8.5.0",
       "type": "library",
-      "version": "8.4.2"
+      "version": "8.5.0"
     },
     {
       "bom-ref": "coverage==7.15.4",
@@ -2015,7 +2015,7 @@
       "version": "26.3"
     },
     {
-      "bom-ref": "pip==26.1.2",
+      "bom-ref": "pip==26.2.1",
       "description": "The PyPA recommended tool for installing Python packages.",
       "externalReferences": [
         {
@@ -2048,9 +2048,9 @@
         }
       ],
       "name": "pip",
-      "purl": "pkg:pypi/pip@26.1.2",
+      "purl": "pkg:pypi/pip@26.2.1",
       "type": "library",
-      "version": "26.1.2"
+      "version": "26.2.1"
     },
     {
       "bom-ref": "pip-requirements-parser==32.0.1",
@@ -2338,6 +2338,34 @@
       "purl": "pkg:pypi/pyparsing@3.3.2",
       "type": "library",
       "version": "3.3.2"
+    },
+    {
+      "bom-ref": "pyrefly==1.3.2",
+      "description": "A fast type checker and language server for Python with powerful IDE features",
+      "externalReferences": [
+        {
+          "comment": "from packaging metadata Project-URL: documentation",
+          "type": "documentation",
+          "url": "https://pyrefly.org/en/docs/"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: homepage",
+          "type": "website",
+          "url": "https://pyrefly.org"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "acknowledgement": "declared",
+            "id": "MIT"
+          }
+        }
+      ],
+      "name": "pyrefly",
+      "purl": "pkg:pypi/pyrefly@1.3.2",
+      "type": "library",
+      "version": "1.3.2"
     },
     {
       "bom-ref": "pytest==9.1.1",
@@ -3893,7 +3921,7 @@
       "ref": "charset-normalizer==3.5.1"
     },
     {
-      "ref": "click==8.4.2"
+      "ref": "click==8.5.0"
     },
     {
       "ref": "coverage==7.15.4"
@@ -4088,7 +4116,7 @@
       "ref": "pip-requirements-parser==32.0.1"
     },
     {
-      "ref": "pip==26.1.2"
+      "ref": "pip==26.2.1"
     },
     {
       "dependsOn": [
@@ -4133,6 +4161,9 @@
         "Jinja2==3.1.6"
       ],
       "ref": "pyparsing==3.3.2"
+    },
+    {
+      "ref": "pyrefly==1.3.2"
     },
     {
       "dependsOn": [
@@ -4218,7 +4249,7 @@
         "attrs==26.1.0",
         "chardet==5.2.0",
         "charset-normalizer==3.5.1",
-        "click==8.4.2",
+        "click==8.5.0",
         "license-expression==30.4.4",
         "python-debian==1.1.1",
         "python-magic==0.4.27",
@@ -4261,6 +4292,7 @@
         "msgpack==1.2.1",
         "myst-parser==5.1.0",
         "prometheus_client==0.26.0",
+        "pyrefly==1.3.2",
         "pytest-aiohttp==1.1.1",
         "pytest-asyncio==1.4.0",
         "pytest-cov==7.1.0",
@@ -4420,7 +4452,7 @@
       "type": "application",
       "version": "0.8.0"
     },
-    "timestamp": "2026-08-26T15:06:50.753791+00:00",
+    "timestamp": "2026-10-13T21:01:13.525658+00:00",
     "tools": {
       "components": [
         {
@@ -4524,7 +4556,7 @@
       ]
     }
   },
-  "serialNumber": "urn:uuid:5ef82900-982c-493e-9a29-4e2d843bd479",
+  "serialNumber": "urn:uuid:e890d5f8-a17d-4f68-aad1-eae5611aa630",
   "version": 1,
   "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
   "bomFormat": "CycloneDX",
